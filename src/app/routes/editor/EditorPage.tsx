@@ -8,6 +8,7 @@ import { NodeConfigPanel } from '@/features/workflow-editor/components/NodeConfi
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useEditorStore } from '@/features/workflow-editor/stores/editor-store';
 import { createWorkflow, updateWorkflow, getWorkflow, executeWorkflow } from '@/lib/api/workflow';
+import { getAuthStatus } from '@/lib/api/github';
 import { useRouter } from '@/lib/router';
 import { editorFlowMachine } from './editor-flow-machine';
 import { editorDomainMachine } from './editor-domain-machine';
@@ -207,6 +208,26 @@ export function EditorPage() {
   const handleExecute = useCallback(async () => {
     if (!isWorkflowNameValid || isBusy) return;
 
+    const requiresGitHubAuth = nodes.some((node) => node.data.nodeType.startsWith('github.'));
+    if (requiresGitHubAuth) {
+      try {
+        const authStatus = await getAuthStatus();
+        if (!authStatus.authenticated) {
+          sendFlowEvent({
+            type: 'EXECUTE_FAILURE',
+            message: 'GitHub is not authenticated. Open Settings and save a GitHub token first.',
+          });
+          return;
+        }
+      } catch {
+        sendFlowEvent({
+          type: 'EXECUTE_FAILURE',
+          message: 'Could not verify GitHub authentication. Open Settings and retry.',
+        });
+        return;
+      }
+    }
+
     sendFlowEvent({ type: 'EXECUTE_REQUEST' });
     try {
       let targetWorkflowId = workflowId;
@@ -238,6 +259,7 @@ export function EditorPage() {
     isBusy,
     workflowId,
     buildWorkflowPayload,
+    nodes,
     navigate,
     sendDomainEvent,
     sendFlowEvent,

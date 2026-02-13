@@ -35,9 +35,9 @@ impl InitializationState {
 /// Application state containing all services, shared via Tauri's managed state.
 pub struct AppState {
     pub storage: StorageService,
-    pub github: GitHubClient,
+    pub github: Arc<GitHubClient>,
     pub claude: ClaudeExecutor,
-    pub git: GitService,
+    pub git: Arc<GitService>,
     pub engine: WorkflowEngine,
     pub backlog: BacklogService,
     pub initialization: Arc<RwLock<InitializationState>>,
@@ -49,9 +49,9 @@ impl AppState {
         let backlog = BacklogService::new(engine.db_pool_handle());
         Self {
             storage: StorageService::new(),
-            github: GitHubClient::new(),
+            github: Arc::new(GitHubClient::new()),
             claude: ClaudeExecutor::new(),
-            git: GitService::new(),
+            git: Arc::new(GitService::new()),
             backlog,
             engine,
             initialization: Arc::new(RwLock::new(InitializationState::new())),

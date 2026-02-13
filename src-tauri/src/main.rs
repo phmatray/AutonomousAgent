@@ -50,8 +50,8 @@ fn main() {
             drop(auth_tx);
 
             // --- Database initialization (blocking - must complete before app is ready) ---
-            let github_client = Arc::new(services::GitHubClient::new());
-            let git_service = Arc::new(services::GitService::new());
+            let github_client = Arc::clone(&state.github);
+            let git_service = Arc::clone(&state.git);
 
             let engine_db = state.inner().engine.db_pool_handle();
             let engine_svc = state.inner().engine.services_handle();

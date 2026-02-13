@@ -23,6 +23,16 @@ const LOG_LEVEL_STYLES: Record<string, string> = {
   ERROR: 'text-red-400',
 };
 
+function formatExportError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'Failed to export debug bundle';
+  }
+}
+
 function ExecutionCard({
   execution,
   isSelected,
@@ -168,7 +178,7 @@ export function MonitoringPage() {
       const result = await exportDebugBundle(selectedExecutionId);
       setExportState({ isExporting: false, path: result.path, error: null });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to export debug bundle';
+      const message = formatExportError(error);
       setExportState({ isExporting: false, path: null, error: message });
     }
   };
