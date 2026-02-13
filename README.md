@@ -165,6 +165,19 @@ Run frontend end-to-end tests (Tauri WebDriver):
 npm run test:e2e
 ```
 
+Run frontend coverage:
+
+```bash
+npm run test:coverage
+```
+
+Run Rust coverage (first-time setup + summary):
+
+```bash
+npm run coverage:rust:setup
+npm run coverage:rust:summary
+```
+
 Prerequisites:
 - Google Chrome installed locally
 - WebDriver dependencies installed via `npm install` (includes `selenium-webdriver`; browser drivers are resolved by Selenium Manager)

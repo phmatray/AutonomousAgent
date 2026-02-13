@@ -18,6 +18,9 @@
     "check": "npm run fmt:rust && npm run lint:rust && npm run typecheck && npm run test:frontend",
     "test:e2e": "node --test e2e/webdriver.spec.mjs",
     "test:e2e:smoke": "node --test --test-name-pattern=\"dashboard: shows empty state and can open editor|editor: saves workflow and updates URL with new id\" e2e/webdriver.spec.mjs",
+    "coverage:rust:setup": "node ./scripts/ensure-cargo-llvm-cov.mjs --install",
+    "coverage:rust:summary": "node ./scripts/ensure-cargo-llvm-cov.mjs && cd src-tauri && cargo llvm-cov --summary-only",
+    "coverage:rust": "node ./scripts/ensure-cargo-llvm-cov.mjs && cd src-tauri && cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info",
     "test:coverage": "vitest run --coverage",
     "prepare": "husky"
   },
