@@ -20,6 +20,7 @@ pub enum WorkflowState {
     Cancelled,
 }
 
+#[allow(dead_code)]
 impl WorkflowState {
     pub fn as_str(&self) -> &'static str {
         match self {

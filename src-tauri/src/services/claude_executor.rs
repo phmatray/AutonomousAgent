@@ -39,6 +39,7 @@ pub struct ClaudeExecutor {
     running: Arc<RwLock<HashMap<String, RunningExecution>>>,
 }
 
+#[allow(dead_code)]
 impl ClaudeExecutor {
     pub fn new() -> Self {
         Self {
@@ -54,8 +55,7 @@ impl ClaudeExecutor {
         working_dir: Option<String>,
         timeout_secs: Option<u64>,
     ) -> Result<ExecutionInfo> {
-        let timeout_duration =
-            Duration::from_secs(timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS));
+        let timeout_duration = Duration::from_secs(timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS));
 
         let exec_id = execution_id.clone();
         let app_clone = app.clone();

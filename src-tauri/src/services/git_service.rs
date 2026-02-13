@@ -28,6 +28,7 @@ pub struct WorktreeInfo {
 
 pub struct GitService;
 
+#[allow(dead_code)]
 impl GitService {
     pub fn new() -> Self {
         Self
@@ -100,11 +101,7 @@ impl GitService {
 
             entries.push(GitLogEntry {
                 sha: oid.to_string(),
-                message: commit
-                    .message()
-                    .unwrap_or("")
-                    .trim()
-                    .to_string(),
+                message: commit.message().unwrap_or("").trim().to_string(),
                 author: author.name().unwrap_or("unknown").to_string(),
                 date: chrono::DateTime::from_timestamp(commit.time().seconds(), 0)
                     .map(|dt| dt.to_rfc3339())
@@ -387,9 +384,7 @@ impl GitService {
             _ => "🔨",
         });
 
-        let scope_part = scope
-            .map(|s| format!("({})", s))
-            .unwrap_or_default();
+        let scope_part = scope.map(|s| format!("({})", s)).unwrap_or_default();
 
         format!("{} {}{}: {}", emoji, commit_type, scope_part, description)
     }

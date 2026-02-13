@@ -35,17 +35,17 @@ impl NodeExecutor for ClaudePlanNode {
         &self,
         _node_id: &str,
         config: &Value,
-        context: &mut ExecutionContext,
+        context: &ExecutionContext,
         services: &ServiceProvider,
     ) -> Result<Value> {
-        let resolved = context.resolve_value(config);
+        let resolved = context.resolve_value(config)?;
         let prompt = resolved["prompt"]
             .as_str()
             .ok_or_else(|| AppError::Validation("prompt must be a string".into()))?;
         let working_dir = resolved["working_dir"]
             .as_str()
             .map(|s| s.to_string())
-            .or_else(|| context.working_dir.clone());
+            .or_else(|| context.get_working_dir());
         let timeout_secs = resolved["timeout_secs"].as_u64();
 
         let output = services
@@ -90,17 +90,17 @@ impl NodeExecutor for ClaudeApplyNode {
         &self,
         _node_id: &str,
         config: &Value,
-        context: &mut ExecutionContext,
+        context: &ExecutionContext,
         services: &ServiceProvider,
     ) -> Result<Value> {
-        let resolved = context.resolve_value(config);
+        let resolved = context.resolve_value(config)?;
         let prompt = resolved["prompt"]
             .as_str()
             .ok_or_else(|| AppError::Validation("prompt must be a string".into()))?;
         let working_dir = resolved["working_dir"]
             .as_str()
             .map(|s| s.to_string())
-            .or_else(|| context.working_dir.clone());
+            .or_else(|| context.get_working_dir());
         let timeout_secs = resolved["timeout_secs"].as_u64();
 
         let output = services
@@ -145,17 +145,17 @@ impl NodeExecutor for ClaudeAnalyzeNode {
         &self,
         _node_id: &str,
         config: &Value,
-        context: &mut ExecutionContext,
+        context: &ExecutionContext,
         services: &ServiceProvider,
     ) -> Result<Value> {
-        let resolved = context.resolve_value(config);
+        let resolved = context.resolve_value(config)?;
         let prompt = resolved["prompt"]
             .as_str()
             .ok_or_else(|| AppError::Validation("prompt must be a string".into()))?;
         let working_dir = resolved["working_dir"]
             .as_str()
             .map(|s| s.to_string())
-            .or_else(|| context.working_dir.clone());
+            .or_else(|| context.get_working_dir());
         let timeout_secs = resolved["timeout_secs"].as_u64();
 
         let output = services

@@ -5,6 +5,7 @@ const GITHUB_TOKEN_KEY: &str = "github_token";
 
 pub struct StorageService;
 
+#[allow(dead_code)]
 impl StorageService {
     pub fn new() -> Self {
         Self

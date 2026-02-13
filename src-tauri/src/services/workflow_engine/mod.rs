@@ -24,6 +24,7 @@ pub struct WorkflowEngine {
     retry_policy: RetryPolicy,
 }
 
+#[allow(dead_code)]
 impl WorkflowEngine {
     pub fn new() -> Self {
         Self {
@@ -62,9 +63,10 @@ impl WorkflowEngine {
             .read()
             .await
             .clone()
-            .ok_or_else(|| AppError::Database(sqlx::Error::Configuration(
-                "Database not initialized".into(),
-            )))
+            .ok_or_else(|| AppError::Database {
+                code: crate::errors::types::ErrorCode::DatabaseNotInitialized.as_str(),
+                message: "Database not initialized".to_string(),
+            })
     }
 
     pub async fn list_workflows(&self) -> Result<Vec<Workflow>> {
@@ -100,7 +102,7 @@ impl WorkflowEngine {
         let config_json = workflow
             .config
             .as_ref()
-            .map(|c| serde_json::to_string(c))
+            .map(serde_json::to_string)
             .transpose()?;
 
         sqlx::query(
@@ -128,7 +130,7 @@ impl WorkflowEngine {
         let config_json = workflow
             .config
             .as_ref()
-            .map(|c| serde_json::to_string(c))
+            .map(serde_json::to_string)
             .transpose()?;
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -172,10 +174,7 @@ impl WorkflowEngine {
             .await?
             .ok_or_else(|| AppError::Validation(format!("Workflow {} not found", workflow_id)))?;
 
-        let services = self
-            .services
-            .read()
-            .await;
+        let services = self.services.read().await;
         let services = services
             .as_ref()
             .ok_or_else(|| AppError::Unknown("Engine not initialized with services".into()))?;
@@ -183,12 +182,8 @@ impl WorkflowEngine {
         let execution_id = uuid::Uuid::new_v4().to_string();
 
         // Record execution start in database
-        self.record_execution_start(
-            &execution_id,
-            workflow_id,
-            trigger_type.unwrap_or("manual"),
-        )
-        .await?;
+        self.record_execution_start(&execution_id, workflow_id, trigger_type.unwrap_or("manual"))
+            .await?;
 
         // Run the DAG executor
         let result = executor::execute_workflow(
@@ -231,10 +226,7 @@ impl WorkflowEngine {
     }
 
     /// Record the completion of a workflow execution.
-    async fn record_execution_complete(
-        &self,
-        result: &WorkflowExecutionResult,
-    ) -> Result<()> {
+    async fn record_execution_complete(&self, result: &WorkflowExecutionResult) -> Result<()> {
         let pool = self.get_pool().await?;
         let context_json = serde_json::to_string(&result.node_results)?;
 
@@ -254,7 +246,7 @@ impl WorkflowEngine {
             let output_json = node_result
                 .output
                 .as_ref()
-                .map(|o| serde_json::to_string(o))
+                .map(serde_json::to_string)
                 .transpose()?;
             let node_exec_id = uuid::Uuid::new_v4().to_string();
 
@@ -352,10 +344,7 @@ impl WorkflowRow {
     fn into_workflow(self) -> Result<Workflow> {
         let nodes = serde_json::from_str(&self.nodes)?;
         let edges = serde_json::from_str(&self.edges)?;
-        let config = self
-            .config
-            .map(|c| serde_json::from_str(&c))
-            .transpose()?;
+        let config = self.config.map(|c| serde_json::from_str(&c)).transpose()?;
 
         Ok(Workflow {
             id: self.id,
@@ -386,9 +375,7 @@ struct ExecutionRow {
 
 impl ExecutionRow {
     fn into_execution(self) -> WorkflowExecution {
-        let context = self
-            .context
-            .and_then(|c| serde_json::from_str(&c).ok());
+        let context = self.context.and_then(|c| serde_json::from_str(&c).ok());
 
         WorkflowExecution {
             id: self.id,
@@ -417,9 +404,7 @@ struct ExecutionLogRow {
 
 impl ExecutionLogRow {
     fn into_entry(self) -> crate::commands::workflow::ExecutionLogEntry {
-        let metadata = self
-            .metadata
-            .and_then(|m| serde_json::from_str(&m).ok());
+        let metadata = self.metadata.and_then(|m| serde_json::from_str(&m).ok());
 
         crate::commands::workflow::ExecutionLogEntry {
             id: self.id,

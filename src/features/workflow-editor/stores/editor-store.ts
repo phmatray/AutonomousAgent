@@ -38,6 +38,7 @@ interface EditorState {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   selectedNodeId: string | null;
+  pendingDeleteNodeId: string | null;
   workflowId: string | null;
   workflowName: string;
   isDirty: boolean;
@@ -48,6 +49,9 @@ interface EditorState {
   setSelectedNode: (id: string | null) => void;
   addNode: (type: NodeType, position: { x: number; y: number }) => void;
   removeNode: (id: string) => void;
+  requestDeleteNode: (id: string) => void;
+  confirmDelete: () => void;
+  cancelDelete: () => void;
   updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
   setWorkflow: (id: string, name: string, nodes: WorkflowNode[], edges: WorkflowEdge[]) => void;
   setWorkflowName: (name: string) => void;
@@ -72,11 +76,20 @@ const NODE_LABELS: Record<NodeType, string> = {
   delay: 'Delay',
 };
 
-function isConnectionValid(connection: Connection, nodes: WorkflowNode[]): boolean {
+function isConnectionValid(connection: Connection, nodes: WorkflowNode[], edges: WorkflowEdge[]): boolean {
   if (connection.source === connection.target) return false;
   const sourceNode = nodes.find((n) => n.id === connection.source);
   const targetNode = nodes.find((n) => n.id === connection.target);
   if (!sourceNode || !targetNode) return false;
+
+  // For condition nodes, prevent multiple edges from the same sourceHandle
+  if (sourceNode.data.nodeType === 'condition' && connection.sourceHandle) {
+    const existingEdge = edges.find(
+      (e) => e.source === connection.source && e.sourceHandle === connection.sourceHandle,
+    );
+    if (existingEdge) return false;
+  }
+
   return true;
 }
 
@@ -84,6 +97,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   nodes: [],
   edges: [],
   selectedNodeId: null,
+  pendingDeleteNodeId: null,
   workflowId: null,
   workflowName: 'Untitled Workflow',
   isDirty: false,
@@ -103,11 +117,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   onConnect: (connection) => {
-    if (!isConnectionValid(connection, get().nodes)) return;
+    const { nodes, edges } = get();
+    if (!isConnectionValid(connection, nodes, edges)) return;
+
+    // Color edges based on condition node sourceHandle
+    const sourceNode = nodes.find((n) => n.id === connection.source);
+    let strokeColor = '#6366f1';
+    if (sourceNode?.data.nodeType === 'condition') {
+      strokeColor = connection.sourceHandle === 'true' ? '#059669' : '#dc2626';
+    }
+
     set({
       edges: addEdge(
-        { ...connection, animated: true, style: { stroke: '#6366f1' } },
-        get().edges,
+        { ...connection, animated: true, style: { stroke: strokeColor } },
+        edges,
       ),
       isDirty: true,
     });
@@ -117,6 +140,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   addNode: (type, position) => {
     const id = `node-${Date.now()}`;
+    // Set default config based on node type
+    const defaultConfig = type === 'trigger' ? { trigger_type: 'manual' } : {};
     const newNode: WorkflowNode = {
       id,
       type: 'workflowNode',
@@ -124,7 +149,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       data: {
         label: NODE_LABELS[type],
         nodeType: type,
-        config: {},
+        config: defaultConfig,
       },
     };
     set({
@@ -138,8 +163,30 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       nodes: get().nodes.filter((n) => n.id !== id),
       edges: get().edges.filter((e) => e.source !== id && e.target !== id),
       selectedNodeId: get().selectedNodeId === id ? null : get().selectedNodeId,
+      pendingDeleteNodeId: get().pendingDeleteNodeId === id ? null : get().pendingDeleteNodeId,
       isDirty: true,
     });
+  },
+
+  requestDeleteNode: (id) => {
+    const { edges } = get();
+    const hasConnectedEdges = edges.some((e) => e.source === id || e.target === id);
+    if (hasConnectedEdges) {
+      set({ pendingDeleteNodeId: id });
+    } else {
+      get().removeNode(id);
+    }
+  },
+
+  confirmDelete: () => {
+    const { pendingDeleteNodeId } = get();
+    if (pendingDeleteNodeId) {
+      get().removeNode(pendingDeleteNodeId);
+    }
+  },
+
+  cancelDelete: () => {
+    set({ pendingDeleteNodeId: null });
   },
 
   updateNodeConfig: (id, config) => {
@@ -168,6 +215,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       nodes: [],
       edges: [],
       selectedNodeId: null,
+      pendingDeleteNodeId: null,
       workflowId: null,
       workflowName: 'Untitled Workflow',
       isDirty: false,

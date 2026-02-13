@@ -97,3 +97,20 @@ export interface ExecutionLog {
   metadata?: Record<string, any>;
   timestamp: string;
 }
+
+export interface BacklogItem {
+  id: string;
+  owner: string;
+  repo: string;
+  issue_number: number;
+  title: string;
+  body?: string;
+  state: string;
+  labels: string[];
+  assignees: string[];
+  html_url: string;
+  linked_workflow_id?: string;
+  synced_at: string;
+  created_at: string;
+  updated_at: string;
+}

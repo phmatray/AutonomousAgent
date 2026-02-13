@@ -1,6 +1,6 @@
 use crate::errors::Result;
-use crate::services::AppState;
 use crate::services::git_service::GitService;
+use crate::services::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -32,10 +32,7 @@ pub async fn git_log(
 }
 
 #[tauri::command]
-pub async fn git_diff(
-    repo_path: String,
-    state: State<'_, AppState>,
-) -> Result<String> {
+pub async fn git_diff(repo_path: String, state: State<'_, AppState>) -> Result<String> {
     state.git.diff_summary(&repo_path)
 }
 
@@ -67,10 +64,7 @@ pub async fn git_remove_worktree(
     worktree_path: String,
     state: State<'_, AppState>,
 ) -> Result<()> {
-    state
-        .git
-        .remove_worktree(&repo_path, &worktree_path)
-        .await
+    state.git.remove_worktree(&repo_path, &worktree_path).await
 }
 
 #[tauri::command]
@@ -104,18 +98,11 @@ pub async fn git_push(
 }
 
 #[tauri::command]
-pub async fn git_pull(
-    repo_path: String,
-    state: State<'_, AppState>,
-) -> Result<()> {
+pub async fn git_pull(repo_path: String, state: State<'_, AppState>) -> Result<()> {
     state.git.pull(&repo_path).await
 }
 
 #[tauri::command]
-pub async fn git_clone(
-    url: String,
-    target_path: String,
-    state: State<'_, AppState>,
-) -> Result<()> {
+pub async fn git_clone(url: String, target_path: String, state: State<'_, AppState>) -> Result<()> {
     state.git.clone_repo(&url, &target_path).await
 }

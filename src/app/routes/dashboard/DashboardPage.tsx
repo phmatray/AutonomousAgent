@@ -1,6 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
-import { listWorkflows } from '@/lib/api/workflow';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { listWorkflows, deleteWorkflow } from '@/lib/api/workflow';
+import { useRouter } from '@/lib/router';
+import { Trash2 } from 'lucide-react';
 import type { Workflow } from '@/types/workflow';
+import { useState } from 'react';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
@@ -17,29 +21,47 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function WorkflowCard({ workflow }: { workflow: Workflow }) {
+function WorkflowCard({
+  workflow,
+  onClick,
+  onDelete
+}: {
+  workflow: Workflow;
+  onClick: () => void;
+  onDelete: (e: React.MouseEvent) => void;
+}) {
   return (
     <article
-      className="bg-gray-800 border border-gray-700 rounded-lg p-4 hover:border-indigo-500 transition-colors cursor-pointer"
+      className="bg-gray-800 border border-gray-700 rounded-lg p-4 hover:border-indigo-500 transition-colors cursor-pointer relative group"
       role="article"
       aria-label={`Workflow: ${workflow.name}`}
     >
-      <div className="flex items-start justify-between mb-2">
-        <h3 className="text-white font-medium">{workflow.name}</h3>
-        <StatusBadge status="draft" />
+      <div onClick={onClick} className="w-full h-full">
+        <div className="flex items-start justify-between mb-2">
+          <h3 className="text-white font-medium">{workflow.name}</h3>
+          <StatusBadge status="draft" />
+        </div>
+        {workflow.description && (
+          <p className="text-sm text-gray-400 mb-3">{workflow.description}</p>
+        )}
+        <div className="flex items-center justify-between text-xs text-gray-500">
+          <span>{workflow.nodes.length} nodes</span>
+          <span>v{workflow.version}</span>
+        </div>
       </div>
-      {workflow.description && (
-        <p className="text-sm text-gray-400 mb-3">{workflow.description}</p>
-      )}
-      <div className="flex items-center justify-between text-xs text-gray-500">
-        <span>{workflow.nodes.length} nodes</span>
-        <span>v{workflow.version}</span>
-      </div>
+      <button
+        onClick={onDelete}
+        className="absolute top-2 right-2 p-1.5 rounded bg-gray-900/80 text-gray-400 hover:text-red-400 hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-red-500"
+        aria-label="Delete workflow"
+        title="Delete workflow"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
     </article>
   );
 }
 
-function EmptyState({ onNavigateToEditor }: { onNavigateToEditor: () => void }) {
+function EmptyState({ onNavigateToEditor }: { onNavigateToEditor: (id?: string) => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center mb-4">
@@ -51,7 +73,7 @@ function EmptyState({ onNavigateToEditor }: { onNavigateToEditor: () => void }) 
       </p>
       <button
         type="button"
-        onClick={onNavigateToEditor}
+        onClick={() => onNavigateToEditor()}
         className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
       >
         Create Workflow
@@ -61,6 +83,10 @@ function EmptyState({ onNavigateToEditor }: { onNavigateToEditor: () => void }) 
 }
 
 export function DashboardPage() {
+  const { navigate } = useRouter();
+  const queryClient = useQueryClient();
+  const [workflowToDelete, setWorkflowToDelete] = useState<Workflow | null>(null);
+
   const {
     data: workflows,
     isLoading,
@@ -71,8 +97,44 @@ export function DashboardPage() {
     retry: false,
   });
 
-  const navigateToEditor = () => {
-    window.location.hash = '#/editor';
+  const deleteMutation = useMutation({
+    mutationFn: deleteWorkflow,
+    onSuccess: () => {
+      // Invalidate and refetch workflows list
+      queryClient.invalidateQueries({ queryKey: ['workflows'] });
+      setWorkflowToDelete(null);
+    },
+    onError: (error: Error) => {
+      console.error('Failed to delete workflow:', error);
+      // You could add a toast notification here
+      setWorkflowToDelete(null);
+    },
+  });
+
+  const navigateToEditor = (workflowId?: string) => {
+    console.log('Navigate to editor called with ID:', workflowId);
+    if (workflowId) {
+      console.log('Navigating to editor with ID:', workflowId);
+      navigate('editor', { id: workflowId });
+    } else {
+      console.log('Navigating to editor without ID');
+      navigate('editor');
+    }
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, workflow: Workflow) => {
+    e.stopPropagation(); // Prevent card click from firing
+    setWorkflowToDelete(workflow);
+  };
+
+  const confirmDelete = () => {
+    if (workflowToDelete) {
+      deleteMutation.mutate(workflowToDelete.id);
+    }
+  };
+
+  const cancelDelete = () => {
+    setWorkflowToDelete(null);
   };
 
   return (
@@ -87,7 +149,7 @@ export function DashboardPage() {
           </div>
           <button
             type="button"
-            onClick={navigateToEditor}
+            onClick={() => navigateToEditor()}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             New Workflow
@@ -109,7 +171,7 @@ export function DashboardPage() {
             </p>
             <button
               type="button"
-              onClick={navigateToEditor}
+              onClick={() => navigateToEditor()}
               className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               Open Editor
@@ -129,11 +191,25 @@ export function DashboardPage() {
           >
             {workflows.map((wf) => (
               <div key={wf.id} role="listitem">
-                <WorkflowCard workflow={wf} />
+                <WorkflowCard
+                  workflow={wf}
+                  onClick={() => navigateToEditor(wf.id)}
+                  onDelete={(e) => handleDeleteClick(e, wf)}
+                />
               </div>
             ))}
           </div>
         )}
+
+        <ConfirmDialog
+          open={!!workflowToDelete}
+          title="Delete Workflow"
+          message={`Are you sure you want to delete "${workflowToDelete?.name}"? This action cannot be undone.`}
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          onConfirm={confirmDelete}
+          onCancel={cancelDelete}
+        />
       </div>
     </div>
   );

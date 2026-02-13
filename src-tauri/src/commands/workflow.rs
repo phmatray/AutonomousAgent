@@ -1,9 +1,11 @@
 use crate::errors::Result;
 use crate::models::workflow::{Workflow, WorkflowExecution};
-use crate::services::AppState;
 use crate::services::workflow_engine::executor::WorkflowExecutionResult;
+use crate::services::AppState;
+use chrono;
 use serde::{Deserialize, Serialize};
 use tauri::State;
+use uuid;
 
 #[tauri::command]
 pub async fn list_workflows(state: State<'_, AppState>) -> Result<Vec<Workflow>> {
@@ -17,9 +19,20 @@ pub async fn get_workflow(id: String, state: State<'_, AppState>) -> Result<Opti
 
 #[tauri::command]
 pub async fn create_workflow(
-    workflow: Workflow,
+    mut workflow: Workflow,
     state: State<'_, AppState>,
 ) -> Result<Workflow> {
+    // Generate missing fields if not provided
+    if workflow.id.is_empty() {
+        workflow.id = uuid::Uuid::new_v4().to_string();
+    }
+    if workflow.created_at.is_empty() {
+        workflow.created_at = chrono::Utc::now().to_rfc3339();
+    }
+    if workflow.updated_at.is_empty() {
+        workflow.updated_at = chrono::Utc::now().to_rfc3339();
+    }
+
     state.engine.create_workflow(&workflow).await
 }
 
@@ -54,10 +67,7 @@ pub async fn list_executions(
     workflow_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<WorkflowExecution>> {
-    state
-        .engine
-        .list_executions(workflow_id.as_deref())
-        .await
+    state.engine.list_executions(workflow_id.as_deref()).await
 }
 
 #[derive(Debug, Serialize, Deserialize)]

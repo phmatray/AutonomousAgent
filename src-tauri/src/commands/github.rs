@@ -32,10 +32,7 @@ pub struct Issue {
 }
 
 #[tauri::command]
-pub async fn authenticate_github(
-    token: String,
-    state: State<'_, AppState>,
-) -> Result<AuthResult> {
+pub async fn authenticate_github(token: String, state: State<'_, AppState>) -> Result<AuthResult> {
     // Store token securely
     state.storage.set_github_token(&token)?;
 
@@ -116,9 +113,7 @@ pub async fn create_pull_request(
 }
 
 #[tauri::command]
-pub async fn get_auth_status(
-    state: State<'_, AppState>,
-) -> Result<serde_json::Value> {
+pub async fn get_auth_status(state: State<'_, AppState>) -> Result<serde_json::Value> {
     match state.github.get_authenticated_user().await {
         Ok(user) => Ok(serde_json::json!({
             "authenticated": true,

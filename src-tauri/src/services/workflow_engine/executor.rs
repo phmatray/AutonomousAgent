@@ -50,6 +50,7 @@ pub struct WorkflowExecutionResult {
 
 /// Adjacency information built from the workflow definition.
 #[derive(Debug)]
+#[allow(dead_code)]
 struct DagInfo {
     /// node_id -> list of successor node IDs
     adjacency: HashMap<String, Vec<String>>,
@@ -155,13 +156,37 @@ pub async fn execute_workflow(
     services: &ServiceProvider,
     retry_policy: &RetryPolicy,
 ) -> WorkflowExecutionResult {
+    let workflow_start_time = std::time::Instant::now();
     let started_at = chrono::Utc::now().to_rfc3339();
     let mut node_results: Vec<NodeExecutionResult> = Vec::new();
 
+    log::info!(
+        "[Workflow:{}] [Execution:{}] Starting workflow execution - '{}' with {} nodes, {} edges",
+        workflow.id,
+        execution_id,
+        workflow.name,
+        workflow.nodes.len(),
+        workflow.edges.len()
+    );
+
     // Build the DAG
     let dag = match build_dag(&workflow.nodes, &workflow.edges) {
-        Ok(d) => d,
+        Ok(d) => {
+            log::info!(
+                "[Workflow:{}] [Execution:{}] DAG built successfully with {} execution levels",
+                workflow.id,
+                execution_id,
+                d.levels.len()
+            );
+            d
+        }
         Err(e) => {
+            log::error!(
+                "[Workflow:{}] [Execution:{}] DAG validation failed: {}",
+                workflow.id,
+                execution_id,
+                e
+            );
             return WorkflowExecutionResult {
                 execution_id: execution_id.to_string(),
                 workflow_id: workflow.id.clone(),
@@ -190,8 +215,11 @@ pub async fn execute_workflow(
     }
 
     // Create execution context from workflow config
-    let mut context = ExecutionContext::new(
-        workflow.config.clone().unwrap_or(Value::Object(Default::default())),
+    let context = ExecutionContext::new(
+        workflow
+            .config
+            .clone()
+            .unwrap_or(Value::Object(Default::default())),
     );
 
     // Track which nodes have been skipped due to failed conditions
@@ -254,7 +282,10 @@ pub async fn execute_workflow(
                 }
             };
 
-            let config = node.config.clone().unwrap_or(Value::Object(Default::default()));
+            let config = node
+                .config
+                .clone()
+                .unwrap_or(Value::Object(Default::default()));
 
             // Validate node config
             if let Err(e) = executor.validate(&config) {
@@ -273,23 +304,61 @@ pub async fn execute_workflow(
             }
 
             // Execute with retries
+            let node_start_time = std::time::Instant::now();
             let node_started = chrono::Utc::now().to_rfc3339();
             let mut last_error = None;
             let mut retry_count = 0u32;
             let mut node_output = None;
 
+            // Log node execution start
+            log::info!(
+                "[Workflow:{}] [Execution:{}] Starting node '{}' (type: {})",
+                workflow.id,
+                execution_id,
+                node_id,
+                node.node_type
+            );
+
             for attempt in 0..=retry_policy.max_retries {
                 retry_count = attempt;
-                match executor
-                    .execute(node_id, &config, &mut context, services)
-                    .await
-                {
+
+                if attempt > 0 {
+                    log::warn!(
+                        "[Workflow:{}] [Execution:{}] Retrying node '{}' (attempt {}/{})",
+                        workflow.id,
+                        execution_id,
+                        node_id,
+                        attempt + 1,
+                        retry_policy.max_retries + 1
+                    );
+                }
+
+                let attempt_start = std::time::Instant::now();
+                match executor.execute(node_id, &config, &context, services).await {
                     Ok(output) => {
+                        let attempt_duration = attempt_start.elapsed();
+                        log::info!(
+                            "[Workflow:{}] [Execution:{}] Node '{}' completed successfully in {:?}{}",
+                            workflow.id,
+                            execution_id,
+                            node_id,
+                            attempt_duration,
+                            if attempt > 0 { format!(" (after {} retries)", attempt) } else { String::new() }
+                        );
                         node_output = Some(output);
                         last_error = None;
                         break;
                     }
                     Err(e) => {
+                        let attempt_duration = attempt_start.elapsed();
+                        log::error!(
+                            "[Workflow:{}] [Execution:{}] Node '{}' failed after {:?}: {}",
+                            workflow.id,
+                            execution_id,
+                            node_id,
+                            attempt_duration,
+                            e
+                        );
                         last_error = Some(format!("{}", e));
                         if attempt < retry_policy.max_retries {
                             tokio::time::sleep(tokio::time::Duration::from_millis(
@@ -302,6 +371,15 @@ pub async fn execute_workflow(
             }
 
             let node_completed = chrono::Utc::now().to_rfc3339();
+            let total_node_duration = node_start_time.elapsed();
+
+            log::info!(
+                "[Workflow:{}] [Execution:{}] Node '{}' total execution time: {:?}",
+                workflow.id,
+                execution_id,
+                node_id,
+                total_node_duration
+            );
 
             if let Some(output) = node_output {
                 // Store output in context for downstream nodes
@@ -313,14 +391,12 @@ pub async fn execute_workflow(
                     if let Some(successors) = dag.adjacency.get(node_id) {
                         for succ_id in successors {
                             // Find the edge to determine which handle it connects to
-                            let edge = workflow.edges.iter().find(|e| {
-                                &e.source == node_id && &e.target == succ_id
-                            });
+                            let edge = workflow
+                                .edges
+                                .iter()
+                                .find(|e| &e.source == node_id && &e.target == succ_id);
                             if let Some(edge) = edge {
-                                let handle = edge
-                                    .source_handle
-                                    .as_deref()
-                                    .unwrap_or("true");
+                                let handle = edge.source_handle.as_deref().unwrap_or("true");
                                 if handle != branch {
                                     mark_subtree_skipped(
                                         succ_id,
@@ -369,13 +445,52 @@ pub async fn execute_workflow(
         WorkflowState::Completed
     };
 
+    let workflow_duration = workflow_start_time.elapsed();
+    let completed_at = chrono::Utc::now().to_rfc3339();
+
+    // Count node statuses
+    let completed_count = node_results
+        .iter()
+        .filter(|r| r.status == NodeState::Completed.as_str())
+        .count();
+    let failed_count = node_results
+        .iter()
+        .filter(|r| r.status == NodeState::Failed.as_str())
+        .count();
+    let skipped_count = node_results
+        .iter()
+        .filter(|r| r.status == NodeState::Skipped.as_str())
+        .count();
+
+    if failed {
+        log::error!(
+            "[Workflow:{}] [Execution:{}] Workflow FAILED after {:?} - {} completed, {} failed, {} skipped. Error: {}",
+            workflow.id,
+            execution_id,
+            workflow_duration,
+            completed_count,
+            failed_count,
+            skipped_count,
+            workflow_error.as_deref().unwrap_or("unknown")
+        );
+    } else {
+        log::info!(
+            "[Workflow:{}] [Execution:{}] Workflow completed successfully in {:?} - {} nodes executed, {} skipped",
+            workflow.id,
+            execution_id,
+            workflow_duration,
+            completed_count,
+            skipped_count
+        );
+    }
+
     WorkflowExecutionResult {
         execution_id: execution_id.to_string(),
         workflow_id: workflow.id.clone(),
         status: final_status.as_str().to_string(),
         node_results,
         started_at,
-        completed_at: chrono::Utc::now().to_rfc3339(),
+        completed_at,
         error: workflow_error,
     }
 }

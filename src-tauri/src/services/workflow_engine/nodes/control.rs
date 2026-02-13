@@ -26,7 +26,7 @@ impl NodeExecutor for TriggerNode {
         &self,
         _node_id: &str,
         config: &Value,
-        _context: &mut ExecutionContext,
+        _context: &ExecutionContext,
         _services: &ServiceProvider,
     ) -> Result<Value> {
         let trigger_type = config["trigger_type"].as_str().unwrap_or("manual");
@@ -69,10 +69,10 @@ impl NodeExecutor for ConditionNode {
         &self,
         _node_id: &str,
         config: &Value,
-        context: &mut ExecutionContext,
+        context: &ExecutionContext,
         _services: &ServiceProvider,
     ) -> Result<Value> {
-        let resolved = context.resolve_value(config);
+        let resolved = context.resolve_value(config)?;
         let condition_val = &resolved["condition"];
         let operator = resolved["operator"].as_str().unwrap_or("not_empty");
         let compare_val = &resolved["value"];
@@ -155,10 +155,10 @@ impl NodeExecutor for LoopNode {
         &self,
         _node_id: &str,
         config: &Value,
-        context: &mut ExecutionContext,
+        context: &ExecutionContext,
         _services: &ServiceProvider,
     ) -> Result<Value> {
-        let resolved = context.resolve_value(config);
+        let resolved = context.resolve_value(config)?;
         let items = resolved["items"]
             .as_array()
             .ok_or_else(|| AppError::Validation("loop 'items' must be an array".into()))?;
@@ -166,7 +166,11 @@ impl NodeExecutor for LoopNode {
             .as_u64()
             .unwrap_or(items.len() as u64) as usize;
 
-        let capped = items.iter().take(max_iterations).cloned().collect::<Vec<_>>();
+        let capped = items
+            .iter()
+            .take(max_iterations)
+            .cloned()
+            .collect::<Vec<_>>();
         let first = capped.first().cloned().unwrap_or(Value::Null);
 
         Ok(serde_json::json!({
@@ -206,7 +210,7 @@ impl NodeExecutor for DelayNode {
         &self,
         _node_id: &str,
         config: &Value,
-        _context: &mut ExecutionContext,
+        _context: &ExecutionContext,
         _services: &ServiceProvider,
     ) -> Result<Value> {
         let seconds = config["seconds"].as_u64().unwrap_or(1);

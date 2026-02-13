@@ -40,14 +40,14 @@ impl NodeExecutor for GitWorktreeNode {
         &self,
         _node_id: &str,
         config: &Value,
-        context: &mut ExecutionContext,
+        context: &ExecutionContext,
         services: &ServiceProvider,
     ) -> Result<Value> {
-        let resolved = context.resolve_value(config);
+        let resolved = context.resolve_value(config)?;
         let repo_path = resolved["repo_path"]
             .as_str()
             .map(|s| s.to_string())
-            .or_else(|| context.working_dir.clone())
+            .or_else(|| context.get_working_dir())
             .ok_or_else(|| AppError::Validation("No repo_path or working_dir set".into()))?;
         let worktree_path = resolved["worktree_path"].as_str().unwrap_or_default();
         let branch_name = resolved["branch_name"].as_str().unwrap_or_default();
@@ -58,7 +58,7 @@ impl NodeExecutor for GitWorktreeNode {
             .await?;
 
         // Update working dir to the worktree so subsequent nodes operate there
-        context.working_dir = Some(worktree_path.to_string());
+        context.set_working_dir(Some(worktree_path.to_string()));
 
         Ok(serde_json::json!({
             "worktree_path": worktree_path,
@@ -97,14 +97,14 @@ impl NodeExecutor for GitBranchNode {
         &self,
         _node_id: &str,
         config: &Value,
-        context: &mut ExecutionContext,
+        context: &ExecutionContext,
         services: &ServiceProvider,
     ) -> Result<Value> {
-        let resolved = context.resolve_value(config);
+        let resolved = context.resolve_value(config)?;
         let repo_path = resolved["repo_path"]
             .as_str()
             .map(|s| s.to_string())
-            .or_else(|| context.working_dir.clone())
+            .or_else(|| context.get_working_dir())
             .ok_or_else(|| AppError::Validation("No repo_path or working_dir set".into()))?;
         let branch_type = resolved["branch_type"].as_str().unwrap_or("feature");
         let name = resolved["name"].as_str().unwrap_or_default();
@@ -155,22 +155,21 @@ impl NodeExecutor for GitCommitNode {
         &self,
         _node_id: &str,
         config: &Value,
-        context: &mut ExecutionContext,
+        context: &ExecutionContext,
         services: &ServiceProvider,
     ) -> Result<Value> {
-        let resolved = context.resolve_value(config);
+        let resolved = context.resolve_value(config)?;
         let repo_path = resolved["repo_path"]
             .as_str()
             .map(|s| s.to_string())
-            .or_else(|| context.working_dir.clone())
+            .or_else(|| context.get_working_dir())
             .ok_or_else(|| AppError::Validation("No repo_path or working_dir set".into()))?;
         let commit_type = resolved["commit_type"].as_str().unwrap_or("feat");
         let scope = resolved["scope"].as_str();
         let description = resolved["description"].as_str().unwrap_or_default();
         let gitmoji = resolved["gitmoji"].as_str();
 
-        let message =
-            GitService::conventional_commit(commit_type, scope, description, gitmoji);
+        let message = GitService::conventional_commit(commit_type, scope, description, gitmoji);
 
         // Stage all changes first
         services.git.add_all(&repo_path).await?;

@@ -197,7 +197,7 @@ export function NodeConfigPanel() {
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId);
   const nodes = useEditorStore((s) => s.nodes);
   const updateNodeConfig = useEditorStore((s) => s.updateNodeConfig);
-  const removeNode = useEditorStore((s) => s.removeNode);
+  const requestDeleteNode = useEditorStore((s) => s.requestDeleteNode);
   const getAvailableVariables = useEditorStore((s) => s.getAvailableVariables);
 
   const [showRawJson, setShowRawJson] = useState(false);
@@ -248,7 +248,7 @@ export function NodeConfigPanel() {
           </h2>
           <button
             type="button"
-            onClick={() => removeNode(node.id)}
+            onClick={() => requestDeleteNode(node.id)}
             className="text-xs text-state-error/80 hover:text-state-error px-2 py-1 rounded-md hover:bg-state-error/10 transition-colors"
             aria-label={`Delete ${node.data.label} node`}
           >
@@ -262,6 +262,21 @@ export function NodeConfigPanel() {
           </span>
         </div>
       </div>
+
+      {/* Condition Node Help */}
+      {node.data.nodeType === 'condition' && (
+        <div className="mx-4 mt-4 px-3 py-2 rounded-md bg-control-muted/30 border border-border-secondary text-xs text-text-secondary space-y-1">
+          <p className="font-medium text-text-primary">Branch Outputs</p>
+          <p>
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-600 mr-1.5 align-middle" />
+            <strong>Right (green)</strong> — true branch
+          </p>
+          <p>
+            <span className="inline-block w-2 h-2 rounded-full bg-red-600 mr-1.5 align-middle" />
+            <strong>Left (red)</strong> — false branch
+          </p>
+        </div>
+      )}
 
       {/* Form Fields */}
       <div className="flex-1 px-4 py-4 space-y-4">

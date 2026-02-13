@@ -26,6 +26,10 @@ dist-ssr
 # Tauri
 src-tauri/target
 
+# Coverage reports
+coverage/
+src-tauri/tarpaulin-report.*
+
 # Environment
 .env
 .env.local

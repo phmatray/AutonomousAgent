@@ -2,94 +2,202 @@ use crate::errors::{AppError, Result};
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 /// Shared execution context passed between nodes during a workflow run.
 /// Nodes read inputs from and write outputs to this context.
+///
+/// ## Thread Safety
+/// This implementation uses `Arc<RwLock<>>` for shared mutable state to enable
+/// future parallel execution of nodes within a level. Currently, nodes execute
+/// sequentially, but this design allows for parallel execution in the future
+/// without API changes.
 #[derive(Debug, Clone)]
 pub struct ExecutionContext {
     /// Global workflow configuration (repository, owner, etc.)
+    #[allow(dead_code)]
     pub config: Value,
+
     /// Per-node outputs keyed by node ID.
-    pub node_outputs: HashMap<String, Value>,
+    /// Wrapped in Arc<RwLock<>> to allow safe concurrent access for future parallel execution.
+    node_outputs: Arc<RwLock<HashMap<String, Value>>>,
+
     /// The working directory for the current execution (e.g. repo path).
-    pub working_dir: Option<String>,
+    /// Wrapped in Arc<RwLock<>> to allow safe concurrent access.
+    working_dir: Arc<RwLock<Option<String>>>,
 }
 
+#[allow(dead_code)]
 impl ExecutionContext {
     pub fn new(config: Value) -> Self {
         Self {
             config,
-            node_outputs: HashMap::new(),
-            working_dir: None,
+            node_outputs: Arc::new(RwLock::new(HashMap::new())),
+            working_dir: Arc::new(RwLock::new(None)),
         }
     }
 
     /// Retrieve the output of a previously executed node.
-    pub fn get_node_output(&self, node_id: &str) -> Option<&Value> {
-        self.node_outputs.get(node_id)
+    /// Returns a clone of the output value.
+    pub fn get_node_output(&self, node_id: &str) -> Option<Value> {
+        self.node_outputs.read().ok()?.get(node_id).cloned()
     }
 
     /// Store the output of a node.
-    pub fn set_node_output(&mut self, node_id: String, output: Value) {
-        self.node_outputs.insert(node_id, output);
+    /// Thread-safe for concurrent access.
+    pub fn set_node_output(&self, node_id: String, output: Value) {
+        if let Ok(mut outputs) = self.node_outputs.write() {
+            outputs.insert(node_id, output);
+        }
+    }
+
+    /// Get the current working directory.
+    pub fn get_working_dir(&self) -> Option<String> {
+        self.working_dir.read().ok()?.clone()
+    }
+
+    /// Set the working directory.
+    /// Thread-safe for concurrent access.
+    pub fn set_working_dir(&self, dir: Option<String>) {
+        if let Ok(mut wd) = self.working_dir.write() {
+            *wd = dir;
+        }
     }
 
     /// Resolve a value reference like `{{node_id.field}}` from node outputs.
-    pub fn resolve_reference(&self, reference: &str) -> Option<Value> {
-        let trimmed = reference.trim_start_matches("{{").trim_end_matches("}}").trim();
+    /// Returns the resolved value or an error if the reference doesn't exist.
+    pub fn resolve_reference(&self, reference: &str) -> crate::errors::Result<Value> {
+        let trimmed = reference
+            .trim_start_matches("{{")
+            .trim_end_matches("}}")
+            .trim();
         let parts: Vec<&str> = trimmed.splitn(2, '.').collect();
+
         if parts.is_empty() {
-            return None;
+            return Err(crate::errors::types::AppError::TemplateResolution {
+                reference: reference.to_string(),
+                reason: "Empty reference".to_string(),
+            });
         }
-        let node_output = self.node_outputs.get(parts[0])?;
+
+        let node_id = parts[0];
+        let outputs = self.node_outputs.read().map_err(|_| {
+            crate::errors::types::AppError::TemplateResolution {
+                reference: reference.to_string(),
+                reason: "Failed to acquire read lock on node outputs".to_string(),
+            }
+        })?;
+        let node_output = outputs.get(node_id).ok_or_else(|| {
+            crate::errors::types::AppError::TemplateResolution {
+                reference: reference.to_string(),
+                reason: format!("Node '{}' not found in execution context", node_id),
+            }
+        })?;
+
         if parts.len() == 1 {
-            return Some(node_output.clone());
+            return Ok(node_output.clone());
         }
+
         // Navigate into the JSON value
         let mut current = node_output;
         for key in parts[1].split('.') {
-            current = current.get(key)?;
+            current = current.get(key).ok_or_else(|| {
+                crate::errors::types::AppError::TemplateResolution {
+                    reference: reference.to_string(),
+                    reason: format!("Field '{}' not found in node output", key),
+                }
+            })?;
         }
-        Some(current.clone())
+
+        Ok(current.clone())
     }
 
     /// Resolve template strings in a JSON value, replacing `{{ref}}` patterns.
-    pub fn resolve_value(&self, value: &Value) -> Value {
+    /// This now supports mid-string templates like "path/{{node.id}}/file".
+    pub fn resolve_value(&self, value: &Value) -> crate::errors::Result<Value> {
         match value {
             Value::String(s) => {
-                if s.starts_with("{{") && s.ends_with("}}") {
-                    self.resolve_reference(s).unwrap_or_else(|| value.clone())
-                } else {
-                    value.clone()
+                // Check if string contains any template patterns
+                if !s.contains("{{") {
+                    return Ok(value.clone());
                 }
+
+                // Use regex to find all {{...}} patterns
+                let re = regex::Regex::new(r"\{\{([^}]+)\}\}").unwrap();
+                let mut result = s.clone();
+                let mut errors = Vec::new();
+
+                for cap in re.captures_iter(s) {
+                    let full_match = &cap[0]; // Full {{...}} match
+                    let reference = &cap[1]; // Content inside {{...}}
+
+                    // Resolve the reference
+                    match self.resolve_reference(&format!("{{{{{}}}}}", reference)) {
+                        Ok(resolved_value) => {
+                            // Convert resolved value to string for replacement
+                            let replacement = match &resolved_value {
+                                Value::String(s) => s.clone(),
+                                Value::Number(n) => n.to_string(),
+                                Value::Bool(b) => b.to_string(),
+                                Value::Null => "null".to_string(),
+                                other => {
+                                    serde_json::to_string(other).unwrap_or_else(|_| "".to_string())
+                                }
+                            };
+
+                            result = result.replace(full_match, &replacement);
+                        }
+                        Err(e) => {
+                            errors.push(e);
+                        }
+                    }
+                }
+
+                // If any resolutions failed, return the first error
+                if let Some(err) = errors.into_iter().next() {
+                    return Err(err);
+                }
+
+                Ok(Value::String(result))
             }
             Value::Object(map) => {
-                let resolved: serde_json::Map<String, Value> = map
-                    .iter()
-                    .map(|(k, v)| (k.clone(), self.resolve_value(v)))
-                    .collect();
-                Value::Object(resolved)
+                let mut resolved = serde_json::Map::new();
+                for (k, v) in map.iter() {
+                    resolved.insert(k.clone(), self.resolve_value(v)?);
+                }
+                Ok(Value::Object(resolved))
             }
             Value::Array(arr) => {
-                let resolved: Vec<Value> = arr.iter().map(|v| self.resolve_value(v)).collect();
-                Value::Array(resolved)
+                let mut resolved = Vec::new();
+                for v in arr.iter() {
+                    resolved.push(self.resolve_value(v)?);
+                }
+                Ok(Value::Array(resolved))
             }
-            other => other.clone(),
+            other => Ok(other.clone()),
         }
     }
 }
 
 /// The trait every node type must implement.
+///
+/// ## Thread Safety
+/// The `execute` method takes `&ExecutionContext` (not `&mut`) because
+/// `ExecutionContext` uses interior mutability (RwLock) for thread-safe access.
+/// This design allows future parallel execution of nodes within a level.
 #[async_trait]
 pub trait NodeExecutor: Send + Sync {
     /// Execute the node with the given configuration and shared context.
     /// Returns the node's output as a JSON value.
+    ///
+    /// **Note**: `context` is not mutable because it uses interior mutability
+    /// for thread-safe access. Use `context.set_node_output()` and
+    /// `context.set_working_dir()` to update state.
     async fn execute(
         &self,
         node_id: &str,
         config: &Value,
-        context: &mut ExecutionContext,
+        context: &ExecutionContext,
         services: &ServiceProvider,
     ) -> Result<Value>;
 
@@ -107,8 +215,19 @@ pub trait NodeExecutor: Send + Sync {
 /// This wraps the services so node executors don't depend on Tauri state directly.
 pub struct ServiceProvider {
     pub github: Arc<crate::services::GitHubClient>,
-    pub claude: Arc<ClaudeProvider>,
+    pub claude: Arc<dyn ClaudeRunner>,
     pub git: Arc<crate::services::GitService>,
+}
+
+/// Trait for running Claude prompts, enabling mock implementations in tests.
+#[async_trait]
+pub trait ClaudeRunner: Send + Sync {
+    async fn run_prompt(
+        &self,
+        prompt: &str,
+        working_dir: Option<&str>,
+        timeout_secs: Option<u64>,
+    ) -> Result<String>;
 }
 
 /// Wraps ClaudeExecutor to run prompts without requiring AppHandle per call.
@@ -121,9 +240,12 @@ impl ClaudeProvider {
     pub fn new() -> Self {
         Self { _inner: () }
     }
+}
 
+#[async_trait]
+impl ClaudeRunner for ClaudeProvider {
     /// Run a claude prompt and collect the full output.
-    pub async fn run_prompt(
+    async fn run_prompt(
         &self,
         prompt: &str,
         working_dir: Option<&str>,
@@ -173,6 +295,7 @@ pub struct NodeRegistry {
     executors: HashMap<String, Box<dyn NodeExecutor>>,
 }
 
+#[allow(dead_code)]
 impl NodeRegistry {
     pub fn new() -> Self {
         Self {
@@ -189,9 +312,7 @@ impl NodeRegistry {
         self.executors
             .get(node_type)
             .map(|e| e.as_ref())
-            .ok_or_else(|| {
-                AppError::Validation(format!("Unknown node type: {}", node_type))
-            })
+            .ok_or_else(|| AppError::Validation(format!("Unknown node type: {}", node_type)))
     }
 
     pub fn has(&self, node_type: &str) -> bool {
@@ -239,7 +360,7 @@ mod tests {
 
     #[test]
     fn test_execution_context_set_and_get() {
-        let mut ctx = ExecutionContext::new(Value::Object(Default::default()));
+        let ctx = ExecutionContext::new(Value::Object(Default::default()));
         ctx.set_node_output("node1".into(), serde_json::json!({"result": 42}));
         let output = ctx.get_node_output("node1").unwrap();
         assert_eq!(output["result"], 42);
@@ -247,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_resolve_simple_reference() {
-        let mut ctx = ExecutionContext::new(Value::Object(Default::default()));
+        let ctx = ExecutionContext::new(Value::Object(Default::default()));
         ctx.set_node_output(
             "sync".into(),
             serde_json::json!({"owner": "phmatray", "repo": "test"}),
@@ -258,7 +379,7 @@ mod tests {
 
     #[test]
     fn test_resolve_nested_reference() {
-        let mut ctx = ExecutionContext::new(Value::Object(Default::default()));
+        let ctx = ExecutionContext::new(Value::Object(Default::default()));
         ctx.set_node_output(
             "data".into(),
             serde_json::json!({"nested": {"deep": "value"}}),
@@ -270,16 +391,16 @@ mod tests {
     #[test]
     fn test_resolve_reference_missing() {
         let ctx = ExecutionContext::new(Value::Object(Default::default()));
-        assert!(ctx.resolve_reference("{{missing.field}}").is_none());
+        assert!(ctx.resolve_reference("{{missing.field}}").is_err());
     }
 
     #[test]
     fn test_resolve_value_string_template() {
-        let mut ctx = ExecutionContext::new(Value::Object(Default::default()));
+        let ctx = ExecutionContext::new(Value::Object(Default::default()));
         ctx.set_node_output("sync".into(), serde_json::json!({"repo": "my-repo"}));
 
         let input = serde_json::json!({"name": "{{sync.repo}}"});
-        let resolved = ctx.resolve_value(&input);
+        let resolved = ctx.resolve_value(&input).unwrap();
         assert_eq!(resolved["name"], serde_json::json!("my-repo"));
     }
 
@@ -287,8 +408,40 @@ mod tests {
     fn test_resolve_value_non_template() {
         let ctx = ExecutionContext::new(Value::Object(Default::default()));
         let input = serde_json::json!({"name": "literal"});
-        let resolved = ctx.resolve_value(&input);
+        let resolved = ctx.resolve_value(&input).unwrap();
         assert_eq!(resolved["name"], serde_json::json!("literal"));
+    }
+
+    #[test]
+    fn test_resolve_value_mid_string_template() {
+        let ctx = ExecutionContext::new(Value::Object(Default::default()));
+        ctx.set_node_output("issue".into(), serde_json::json!({"number": 123}));
+
+        let input = serde_json::json!({"branch": "feature/{{issue.number}}-fix"});
+        let resolved = ctx.resolve_value(&input).unwrap();
+        assert_eq!(resolved["branch"], serde_json::json!("feature/123-fix"));
+    }
+
+    #[test]
+    fn test_resolve_value_multiple_templates() {
+        let ctx = ExecutionContext::new(Value::Object(Default::default()));
+        ctx.set_node_output("user".into(), serde_json::json!({"name": "John"}));
+        ctx.set_node_output("repo".into(), serde_json::json!({"name": "test-repo"}));
+
+        let input = serde_json::json!({"path": "/repos/{{user.name}}/{{repo.name}}/issues"});
+        let resolved = ctx.resolve_value(&input).unwrap();
+        assert_eq!(
+            resolved["path"],
+            serde_json::json!("/repos/John/test-repo/issues")
+        );
+    }
+
+    #[test]
+    fn test_resolve_value_error_on_missing_reference() {
+        let ctx = ExecutionContext::new(Value::Object(Default::default()));
+        let input = serde_json::json!({"path": "feature/{{missing.id}}-fix"});
+        let result = ctx.resolve_value(&input);
+        assert!(result.is_err());
     }
 
     #[test]

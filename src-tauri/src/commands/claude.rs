@@ -33,16 +33,11 @@ pub async fn execute_plan(
 }
 
 #[tauri::command]
-pub async fn cancel_execution(
-    execution_id: String,
-    state: State<'_, AppState>,
-) -> Result<()> {
+pub async fn cancel_execution(execution_id: String, state: State<'_, AppState>) -> Result<()> {
     state.claude.cancel(&execution_id).await
 }
 
 #[tauri::command]
-pub async fn list_running_executions(
-    state: State<'_, AppState>,
-) -> Result<Vec<String>> {
+pub async fn list_running_executions(state: State<'_, AppState>) -> Result<Vec<String>> {
     Ok(state.claude.list_running().await)
 }

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useMemo } from 'react';
+import { useCallback, useRef, useMemo, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
@@ -41,10 +41,29 @@ export function WorkflowCanvas({ dragState }: WorkflowCanvasProps) {
   const onConnect = useEditorStore((s) => s.onConnect);
   const setSelectedNode = useEditorStore((s) => s.setSelectedNode);
   const addNode = useEditorStore((s) => s.addNode);
+  const requestDeleteNode = useEditorStore((s) => s.requestDeleteNode);
+  const selectedNodeId = useEditorStore((s) => s.selectedNodeId);
 
   const onInit = useCallback((instance: ReactFlowInstance<WorkflowNode>) => {
     reactFlowRef.current = instance;
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+          return;
+        }
+        if (selectedNodeId) {
+          e.preventDefault();
+          requestDeleteNode(selectedNodeId);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNodeId, requestDeleteNode]);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: WorkflowNode) => {

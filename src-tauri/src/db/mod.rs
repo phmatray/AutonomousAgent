@@ -12,8 +12,7 @@ pub async fn init_database(app: &AppHandle) -> Result<SqlitePool> {
     let db_path = app_dir.join("autonomous_agent.db");
     let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
 
-    let options = SqliteConnectOptions::from_str(&db_url)?
-        .create_if_missing(true);
+    let options = SqliteConnectOptions::from_str(&db_url)?.create_if_missing(true);
     let pool = SqlitePool::connect_with(options).await?;
 
     // Run migrations
@@ -30,6 +29,20 @@ pub async fn init_database(app: &AppHandle) -> Result<SqlitePool> {
         .execute(&pool)
         .await?;
     sqlx::query(schema::CREATE_CONFIG_TABLE)
+        .execute(&pool)
+        .await?;
+    sqlx::query(schema::CREATE_BACKLOG_ITEMS_TABLE)
+        .execute(&pool)
+        .await?;
+    sqlx::query(schema::CREATE_SCHEMA_VERSION_TABLE)
+        .execute(&pool)
+        .await?;
+
+    // Create indexes for performance
+    sqlx::query(schema::CREATE_INDEXES).execute(&pool).await?;
+
+    // Record current schema version
+    sqlx::query("INSERT OR IGNORE INTO schema_version (version) VALUES (1)")
         .execute(&pool)
         .await?;
 

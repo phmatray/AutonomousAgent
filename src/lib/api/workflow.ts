@@ -14,7 +14,7 @@ export async function getWorkflow(id: string): Promise<Workflow> {
 }
 
 export async function createWorkflow(
-  workflow: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt' | 'version'>,
+  workflow: Workflow,
 ): Promise<Workflow> {
   return invoke('create_workflow', { workflow });
 }

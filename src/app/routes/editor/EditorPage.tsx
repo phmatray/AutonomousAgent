@@ -1,10 +1,14 @@
-import { useCallback, useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { WorkflowCanvas } from '@/features/workflow-editor/components/WorkflowCanvas';
 import { NodePalette } from '@/features/workflow-editor/components/NodePalette';
 import { NodeConfigPanel } from '@/features/workflow-editor/components/NodeConfigPanel';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useEditorStore } from '@/features/workflow-editor/stores/editor-store';
-import type { NodeType } from '@/types/workflow';
+import { createWorkflow, updateWorkflow, getWorkflow } from '@/lib/api/workflow';
+import { useRouter } from '@/lib/router';
+import type { NodeType, Workflow } from '@/types/workflow';
 
 interface DragState {
   type: NodeType;
@@ -15,21 +19,129 @@ interface DragState {
 }
 
 export function EditorPage() {
+  const { params } = useRouter();
+  const urlWorkflowId = params.get('id');
+
+  const workflowId = useEditorStore((s) => s.workflowId);
   const workflowName = useEditorStore((s) => s.workflowName);
   const setWorkflowName = useEditorStore((s) => s.setWorkflowName);
   const isDirty = useEditorStore((s) => s.isDirty);
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId);
+  const pendingDeleteNodeId = useEditorStore((s) => s.pendingDeleteNodeId);
+  const confirmDelete = useEditorStore((s) => s.confirmDelete);
+  const cancelDelete = useEditorStore((s) => s.cancelDelete);
+  const setWorkflow = useEditorStore((s) => s.setWorkflow);
+  const clearEditor = useEditorStore((s) => s.clearEditor);
+  const nodes = useEditorStore((s) => s.nodes);
+  const edges = useEditorStore((s) => s.edges);
+
+  // Fetch workflow if ID is provided in URL
+  const { data: fetchedWorkflow } = useQuery<Workflow | null>({
+    queryKey: ['workflow', urlWorkflowId],
+    queryFn: () => (urlWorkflowId ? getWorkflow(urlWorkflowId) : null),
+    enabled: !!urlWorkflowId,
+    retry: false,
+  });
+
+  // Load workflow into editor when fetched
+  useEffect(() => {
+    if (fetchedWorkflow && urlWorkflowId) {
+      // Convert workflow data to editor format
+      const editorNodes = fetchedWorkflow.nodes.map((node) => ({
+        id: node.id,
+        type: 'workflowNode' as const,
+        position: node.position || { x: 0, y: 0 },
+        data: {
+          label: node.type,
+          nodeType: node.type as NodeType,
+          config: (node.config as Record<string, unknown>) || {},
+        },
+      }));
+
+      const editorEdges = fetchedWorkflow.edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle || undefined,
+        targetHandle: edge.targetHandle || undefined,
+      }));
+
+      setWorkflow(fetchedWorkflow.id, fetchedWorkflow.name, editorNodes, editorEdges);
+    } else if (!urlWorkflowId && workflowId) {
+      // Clear editor if navigating to /editor without an ID
+      clearEditor();
+    }
+  }, [fetchedWorkflow, urlWorkflowId, setWorkflow, clearEditor, workflowId]);
+
+  const pendingDeleteInfo = useMemo(() => {
+    if (!pendingDeleteNodeId) return null;
+    const node = nodes.find((n) => n.id === pendingDeleteNodeId);
+    const edgeCount = edges.filter(
+      (e) => e.source === pendingDeleteNodeId || e.target === pendingDeleteNodeId,
+    ).length;
+    return { label: node?.data.label ?? 'this node', edgeCount };
+  }, [pendingDeleteNodeId, nodes, edges]);
 
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [saveGlow, setSaveGlow] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  const saveWorkflowMutation = useMutation({
+    mutationFn: async () => {
+      const workflowData: Workflow = {
+        id: workflowId || '',  // Empty string for new workflows (backend will generate UUID)
+        name: workflowName,
+        nodes: nodes.map((n) => ({
+          id: n.id,
+          type: n.data.nodeType,
+          config: n.data.config || undefined,
+          position: n.position ? { x: n.position.x, y: n.position.y } : undefined,
+        })),
+        edges: edges.map((e) => ({
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          sourceHandle: e.sourceHandle || undefined,
+          targetHandle: e.targetHandle || undefined,
+        })),
+        version: 1,
+        createdAt: '',  // Backend will generate timestamp for new workflows
+        updatedAt: '',  // Backend will generate timestamp for new workflows
+      };
+
+      if (workflowId) {
+        // Update existing workflow
+        return updateWorkflow(workflowId, workflowData);
+      } else {
+        // Create new workflow
+        return createWorkflow(workflowData);
+      }
+    },
+    onSuccess: (savedWorkflow) => {
+      // Update the workflow ID if it was a new workflow
+      if (!workflowId && savedWorkflow.id) {
+        setWorkflow(savedWorkflow.id, savedWorkflow.name, nodes, edges);
+      }
+      // Mark as clean (not dirty)
+      useEditorStore.setState({ isDirty: false });
+      // Trigger save glow animation
+      setSaveGlow(true);
+      setSaveError(null);
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(() => setSaveGlow(false), 1200);
+    },
+    onError: (error: Error) => {
+      setSaveError(error.message || 'Failed to save workflow');
+      setTimeout(() => setSaveError(null), 5000);
+    },
+  });
+
   const handleSave = useCallback(() => {
-    // Trigger save glow animation
-    setSaveGlow(true);
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => setSaveGlow(false), 1200);
-  }, []);
+    if (!saveWorkflowMutation.isPending) {
+      saveWorkflowMutation.mutate();
+    }
+  }, [saveWorkflowMutation]);
 
   const handleExecute = useCallback(() => {
     // Placeholder for execute action
@@ -157,6 +269,7 @@ export function EditorPage() {
           <motion.button
             type="button"
             onClick={handleSave}
+            disabled={saveWorkflowMutation.isPending}
             animate={saveGlow ? {
               boxShadow: [
                 '0 0 0px rgba(99, 102, 241, 0)',
@@ -165,15 +278,26 @@ export function EditorPage() {
               ],
             } : {}}
             transition={saveGlow ? { duration: 1.2, ease: 'easeInOut' } : {}}
-            className={`px-4 py-1.5 text-sm font-medium border rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-border-focus ${
+            className={`px-4 py-1.5 text-sm font-medium border rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-border-focus disabled:opacity-50 disabled:cursor-not-allowed ${
               saveGlow
                 ? 'bg-control/20 text-control-text border-control'
                 : 'bg-bg-elevated text-text-secondary border-border-primary hover:bg-bg-tertiary hover:text-text-primary hover:border-border-hover'
             }`}
             aria-label="Save workflow (Cmd+S)"
           >
-            Save
+            {saveWorkflowMutation.isPending ? 'Saving...' : 'Save'}
           </motion.button>
+          {saveError && (
+            <motion.span
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0 }}
+              className="text-xs text-state-error"
+              role="alert"
+            >
+              {saveError}
+            </motion.span>
+          )}
           <motion.button
             type="button"
             onClick={handleExecute}
@@ -203,6 +327,17 @@ export function EditorPage() {
           )}
         </AnimatePresence>
       </div>
+      <ConfirmDialog
+        open={pendingDeleteNodeId !== null}
+        title="Delete connected node?"
+        message={
+          pendingDeleteInfo
+            ? `"${pendingDeleteInfo.label}" has ${pendingDeleteInfo.edgeCount} connected edge${pendingDeleteInfo.edgeCount !== 1 ? 's' : ''}. Deleting it will also remove ${pendingDeleteInfo.edgeCount === 1 ? 'this connection' : 'these connections'}.`
+            : ''
+        }
+        onConfirm={confirmDelete}
+        onCancel={cancelDelete}
+      />
     </div>
   );
 }

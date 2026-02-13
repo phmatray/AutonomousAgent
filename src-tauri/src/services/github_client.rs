@@ -44,6 +44,7 @@ pub struct GitHubClient {
     authenticated_user: Arc<RwLock<Option<GithubUser>>>,
 }
 
+#[allow(dead_code)]
 impl GitHubClient {
     pub fn new() -> Self {
         Self {
@@ -126,14 +127,12 @@ impl GitHubClient {
                 GithubRepo {
                     id: repo.id.into_inner() as i64,
                     name: repo.name.clone(),
-                    full_name: repo.full_name.unwrap_or_else(|| {
-                        format!("{}/{}", owner, repo.name)
-                    }),
+                    full_name: repo
+                        .full_name
+                        .unwrap_or_else(|| format!("{}/{}", owner, repo.name)),
                     owner,
                     description: repo.description,
-                    default_branch: repo
-                        .default_branch
-                        .unwrap_or_else(|| "main".to_string()),
+                    default_branch: repo.default_branch.unwrap_or_else(|| "main".to_string()),
                     private: repo.private.unwrap_or(false),
                 }
             })
@@ -142,11 +141,7 @@ impl GitHubClient {
         Ok(repos)
     }
 
-    pub async fn list_issues(
-        &self,
-        owner: &str,
-        repo: &str,
-    ) -> Result<Vec<GithubIssue>> {
+    pub async fn list_issues(&self, owner: &str, repo: &str) -> Result<Vec<GithubIssue>> {
         let client = self.get_client().await?;
 
         let page = client
@@ -221,19 +216,12 @@ impl GitHubClient {
 
         Ok(PullRequestInfo {
             number: pr.number as i64,
-            html_url: pr
-                .html_url
-                .map(|u| u.to_string())
-                .unwrap_or_default(),
+            html_url: pr.html_url.map(|u| u.to_string()).unwrap_or_default(),
             title: pr.title.unwrap_or_default(),
         })
     }
 
-    pub async fn get_default_branch_sha(
-        &self,
-        owner: &str,
-        repo: &str,
-    ) -> Result<String> {
+    pub async fn get_default_branch_sha(&self, owner: &str, repo: &str) -> Result<String> {
         let client = self.get_client().await?;
 
         let repo_info = client
@@ -246,17 +234,12 @@ impl GitHubClient {
             .default_branch
             .unwrap_or_else(|| "main".to_string());
 
-        let route = format!(
-            "/repos/{}/{}/git/ref/heads/{}",
-            owner, repo, default_branch
-        );
+        let route = format!("/repos/{}/{}/git/ref/heads/{}", owner, repo, default_branch);
 
         let reference: serde_json::Value = client
             .get(route, None::<&()>)
             .await
-            .map_err(|e| {
-                AppError::GitHub(format!("Failed to get branch ref: {}", e))
-            })?;
+            .map_err(|e| AppError::GitHub(format!("Failed to get branch ref: {}", e)))?;
 
         let sha = reference["object"]["sha"]
             .as_str()

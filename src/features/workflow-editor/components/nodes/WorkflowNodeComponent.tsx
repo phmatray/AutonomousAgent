@@ -21,6 +21,8 @@ import {
   XCircle,
   Clock,
   Circle,
+  Check,
+  X,
 } from 'lucide-react';
 import type { NodeType } from '@/types/workflow';
 import type { WorkflowNode } from '@/features/workflow-editor/stores/editor-store';
@@ -187,12 +189,35 @@ function WorkflowNodeComponent({ data, selected, dragging }: NodeProps<WorkflowN
           )}
         </div>
       </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="!w-3 !h-3 !bg-border-primary !border-2 !border-bg-elevated hover:!bg-control hover:!border-control !transition-colors"
-        aria-label="Output connection point"
-      />
+      {data.nodeType === 'condition' ? (
+        <>
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="true"
+            className="!w-4 !h-4 !bg-emerald-600 !border-2 !border-emerald-400 hover:!bg-emerald-500 hover:!border-emerald-300 !transition-colors !flex !items-center !justify-center"
+            aria-label="True branch output"
+          >
+            <Check size={10} className="text-white pointer-events-none" strokeWidth={3} />
+          </Handle>
+          <Handle
+            type="source"
+            position={Position.Left}
+            id="false"
+            className="!w-4 !h-4 !bg-red-600 !border-2 !border-red-400 hover:!bg-red-500 hover:!border-red-300 !transition-colors !flex !items-center !justify-center"
+            aria-label="False branch output"
+          >
+            <X size={10} className="text-white pointer-events-none" strokeWidth={3} />
+          </Handle>
+        </>
+      ) : (
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          className="!w-3 !h-3 !bg-border-primary !border-2 !border-bg-elevated hover:!bg-control hover:!border-control !transition-colors"
+          aria-label="Output connection point"
+        />
+      )}
     </motion.div>
   );
 }

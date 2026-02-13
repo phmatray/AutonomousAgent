@@ -19,6 +19,7 @@ pub enum TriggerConfig {
 
 /// A scheduled workflow entry.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ScheduledWorkflow {
     workflow_id: String,
     trigger: TriggerConfig,
@@ -30,10 +31,12 @@ struct ScheduledWorkflow {
 /// For MVP, this supports manual triggers and state-based triggers.
 /// Cron and webhook triggers store their configuration but execution
 /// is deferred to a future phase.
+#[allow(dead_code)]
 pub struct Scheduler {
     schedules: Arc<RwLock<HashMap<String, ScheduledWorkflow>>>,
 }
 
+#[allow(dead_code)]
 impl Scheduler {
     pub fn new() -> Self {
         Self {
@@ -42,11 +45,7 @@ impl Scheduler {
     }
 
     /// Register a workflow with a trigger configuration.
-    pub async fn register(
-        &self,
-        workflow_id: &str,
-        trigger: TriggerConfig,
-    ) {
+    pub async fn register(&self, workflow_id: &str, trigger: TriggerConfig) {
         let mut schedules = self.schedules.write().await;
         schedules.insert(
             workflow_id.to_string(),

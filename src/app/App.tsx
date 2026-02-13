@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useRouter } from '@/lib/router';
 import { Navigation } from '@/app/components/Navigation';
 import { DashboardPage } from '@/app/routes/dashboard/DashboardPage';
+// import { BacklogPage } from '@/app/routes/backlog/BacklogPage'; // TODO: Implement backlog feature
 import { EditorPage } from '@/app/routes/editor/EditorPage';
 import { MonitoringPage } from '@/app/routes/monitoring/MonitoringPage';
 import { SettingsPage } from '@/app/routes/settings/SettingsPage';
@@ -23,6 +24,7 @@ function AppContent() {
       <Navigation currentRoute={route} onNavigate={navigate} />
       <main className="flex-1 overflow-hidden" role="main">
         {route === 'dashboard' && <DashboardPage />}
+        {/* {route === 'backlog' && <BacklogPage />} */}
         {route === 'editor' && <EditorPage />}
         {route === 'monitoring' && <MonitoringPage />}
         {route === 'settings' && <SettingsPage />}

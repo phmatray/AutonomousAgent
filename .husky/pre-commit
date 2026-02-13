@@ -1,0 +1,19 @@
+# Rust formatting check
+echo "Checking Rust formatting..."
+cd src-tauri && cargo fmt --check || exit 1
+cd ..
+
+# Rust linting
+echo "Running Rust linting..."
+cd src-tauri && cargo clippy -- -D warnings || exit 1
+cd ..
+
+# TypeScript type checking
+echo "Checking TypeScript types..."
+npx tsc --noEmit || exit 1
+
+# Frontend tests
+echo "Running frontend tests..."
+npx vitest run || exit 1
+
+echo "All pre-commit checks passed!"

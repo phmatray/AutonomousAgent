@@ -1,8 +1,11 @@
 /* Google Fonts: JetBrains Mono (technical/monospace) */
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
-/* Geist Sans via CDN */
-@import url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.min.css');
+/* Geist Sans from Fontsource */
+@import '@fontsource/geist-sans/400.css';
+@import '@fontsource/geist-sans/500.css';
+@import '@fontsource/geist-sans/600.css';
+@import '@fontsource/geist-sans/700.css';
 
 @tailwind base;
 @tailwind components;

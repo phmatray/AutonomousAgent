@@ -5,6 +5,13 @@ use crate::services::workflow_engine::node_registry::{
 use async_trait::async_trait;
 use serde_json::Value;
 
+fn get_required_string(config: &Value, key: &str) -> Result<String> {
+    config[key]
+        .as_str()
+        .ok_or_else(|| AppError::Validation(format!("{} is required and must be a string", key)))
+        .map(String::from)
+}
+
 /// Clone or pull a GitHub repository to ensure it is up to date.
 ///
 /// Config:
@@ -40,12 +47,12 @@ impl NodeExecutor for GithubSyncNode {
         &self,
         _node_id: &str,
         config: &Value,
-        context: &mut ExecutionContext,
+        context: &ExecutionContext,
         services: &ServiceProvider,
     ) -> Result<Value> {
-        let owner = config["owner"].as_str().unwrap();
-        let repo = config["repo"].as_str().unwrap();
-        let path = config["path"].as_str().unwrap();
+        let owner = get_required_string(config, "owner")?;
+        let repo = get_required_string(config, "repo")?;
+        let path = get_required_string(config, "path")?;
 
         let repo_path = format!("{}/{}", path, repo);
 
@@ -58,7 +65,7 @@ impl NodeExecutor for GithubSyncNode {
         }
 
         // Set the working directory for subsequent nodes
-        context.working_dir = Some(repo_path.clone());
+        context.set_working_dir(Some(repo_path.clone()));
 
         Ok(serde_json::json!({
             "repo_path": repo_path,
@@ -87,7 +94,7 @@ impl NodeExecutor for GithubReadIssuesNode {
 
     fn validate(&self, config: &Value) -> Result<()> {
         for field in &["owner", "repo"] {
-            if config.get(field).is_none() {
+            if config.get(field).and_then(|v| v.as_str()).is_none() {
                 return Err(AppError::Validation(format!(
                     "github.readIssues requires '{}' in config",
                     field
@@ -101,10 +108,10 @@ impl NodeExecutor for GithubReadIssuesNode {
         &self,
         _node_id: &str,
         config: &Value,
-        context: &mut ExecutionContext,
+        context: &ExecutionContext,
         services: &ServiceProvider,
     ) -> Result<Value> {
-        let resolved = context.resolve_value(config);
+        let resolved = context.resolve_value(config)?;
         let owner = resolved["owner"]
             .as_str()
             .ok_or_else(|| AppError::Validation("owner must be a string".into()))?;
@@ -161,7 +168,7 @@ impl NodeExecutor for GithubCreatePrNode {
 
     fn validate(&self, config: &Value) -> Result<()> {
         for field in &["owner", "repo", "title", "head"] {
-            if config.get(field).is_none() {
+            if config.get(field).and_then(|v| v.as_str()).is_none() {
                 return Err(AppError::Validation(format!(
                     "github.createPR requires '{}' in config",
                     field
@@ -175,20 +182,20 @@ impl NodeExecutor for GithubCreatePrNode {
         &self,
         _node_id: &str,
         config: &Value,
-        context: &mut ExecutionContext,
+        context: &ExecutionContext,
         services: &ServiceProvider,
     ) -> Result<Value> {
-        let resolved = context.resolve_value(config);
-        let owner = resolved["owner"].as_str().unwrap_or_default();
-        let repo = resolved["repo"].as_str().unwrap_or_default();
-        let title = resolved["title"].as_str().unwrap_or_default();
+        let resolved = context.resolve_value(config)?;
+        let owner = get_required_string(&resolved, "owner")?;
+        let repo = get_required_string(&resolved, "repo")?;
+        let title = get_required_string(&resolved, "title")?;
         let body = resolved["body"].as_str().unwrap_or("");
-        let head = resolved["head"].as_str().unwrap_or_default();
+        let head = get_required_string(&resolved, "head")?;
         let base = resolved["base"].as_str().unwrap_or("develop");
 
         let pr = services
             .github
-            .create_pull_request(owner, repo, title, body, head, base)
+            .create_pull_request(&owner, &repo, &title, body, &head, base)
             .await?;
 
         Ok(serde_json::json!({
