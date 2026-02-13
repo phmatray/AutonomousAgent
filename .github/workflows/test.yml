@@ -39,6 +39,23 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Prepare frontendDist for Tauri compile
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [ ! -f dist/index.html ]; then
+            cat > dist/index.html <<'HTML'
+            <!doctype html>
+            <html>
+              <head>
+                <meta charset="utf-8" />
+                <title>CI placeholder</title>
+              </head>
+              <body></body>
+            </html>
+            HTML
+          fi
+
       - name: Run tests
         working-directory: src-tauri
         run: cargo test
