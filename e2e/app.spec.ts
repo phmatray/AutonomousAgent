@@ -287,3 +287,32 @@ test('clears selected execution when it disappears from refreshed list', async (
   await page.waitForTimeout(3500);
   await expect(page.getByText(/^Select an execution to view logs$/)).toBeVisible();
 });
+
+test('shows dashboard error when workflow deletion fails', async ({ page }) => {
+  await page.addInitScript((workflow) => {
+    const state = (window as Window & {
+      __E2E_STATE__?: { workflows: unknown[] };
+    }).__E2E_STATE__;
+    if (state) state.workflows = [workflow];
+  }, mockWorkflow);
+  await page.goto('/');
+
+  await page.evaluate(() => {
+    const tauri = (window as Window & {
+      __TAURI_INTERNALS__?: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+    }).__TAURI_INTERNALS__;
+    if (!tauri) return;
+    const originalInvoke = tauri.invoke.bind(tauri);
+    tauri.invoke = async (cmd, args = {}) => {
+      if (cmd === 'delete_workflow') {
+        throw new Error('Delete failed');
+      }
+      return originalInvoke(cmd, args);
+    };
+  });
+
+  await page.getByRole('button', { name: 'Delete workflow' }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+
+  await expect(page.getByRole('alert')).toContainText('Failed to delete workflow');
+});
