@@ -161,6 +161,13 @@ export function EditorPage() {
     onSettled: () => {
       executeInFlightRef.current = false;
     },
+    onSuccess: (execution) => {
+      if (execution?.id) {
+        navigate('monitoring', { id: execution.id });
+      } else {
+        navigate('monitoring');
+      }
+    },
   });
 
   const handleSave = useCallback(() => {

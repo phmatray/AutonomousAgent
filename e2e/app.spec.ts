@@ -434,3 +434,18 @@ test('creates and executes workflow when execute is clicked on a new workflow', 
   expect(invokeLog[createIndex]?.args?.workflow?.name).toBe('Execute New Workflow');
   expect(invokeLog[executeIndex]?.args?.workflowId).toBe('wf-created');
 });
+
+test('navigates to monitoring after starting execution', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate((workflow) => {
+    const state = (window as Window & {
+      __E2E_STATE__?: { workflows: unknown[] };
+    }).__E2E_STATE__;
+    if (state) state.workflows = [workflow];
+  }, mockWorkflow);
+
+  await page.goto('/#/editor?id=wf-123');
+  await page.getByRole('button', { name: 'Execute workflow (Cmd+Enter)' }).click();
+
+  await expect(page).toHaveURL(/#\/monitoring\?id=exec-/);
+});
