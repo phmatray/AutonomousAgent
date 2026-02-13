@@ -39,9 +39,6 @@
   "plugins": {
     "sql": {
       "preload": ["sqlite:autonomous_agent.db"]
-    },
-    "store": {
-      "default": "config.json"
     }
   }
 }
