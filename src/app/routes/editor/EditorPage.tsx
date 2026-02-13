@@ -1,6 +1,7 @@
 import { useCallback, useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { useMachine } from '@xstate/react';
 import { WorkflowCanvas } from '@/features/workflow-editor/components/WorkflowCanvas';
 import { NodePalette } from '@/features/workflow-editor/components/NodePalette';
 import { NodeConfigPanel } from '@/features/workflow-editor/components/NodeConfigPanel';
@@ -8,6 +9,8 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useEditorStore } from '@/features/workflow-editor/stores/editor-store';
 import { createWorkflow, updateWorkflow, getWorkflow, executeWorkflow } from '@/lib/api/workflow';
 import { useRouter } from '@/lib/router';
+import { editorFlowMachine } from './editor-flow-machine';
+import { WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
 import type { NodeType, Workflow } from '@/types/workflow';
 
 interface DragState {
@@ -21,6 +24,7 @@ interface DragState {
 export function EditorPage() {
   const { params, navigate } = useRouter();
   const urlWorkflowId = params.get('id');
+  const catalogWorkflows = WorkflowCatalogContext.useSelector((state) => state.context.workflows);
 
   const workflowId = useEditorStore((s) => s.workflowId);
   const workflowName = useEditorStore((s) => s.workflowName);
@@ -40,6 +44,10 @@ export function EditorPage() {
   const { data: fetchedWorkflow, isFetched: hasFetchedWorkflow } = useQuery<Workflow | null>({
     queryKey: ['workflow', urlWorkflowId],
     queryFn: () => (urlWorkflowId ? getWorkflow(urlWorkflowId) : null),
+    initialData: () => {
+      if (!urlWorkflowId) return null;
+      return catalogWorkflows.find((workflow) => workflow.id === urlWorkflowId);
+    },
     enabled: !!urlWorkflowId,
     retry: false,
   });
@@ -87,10 +95,10 @@ export function EditorPage() {
   }, [pendingDeleteNodeId, nodes, edges]);
 
   const [dragState, setDragState] = useState<DragState | null>(null);
-  const [saveGlow, setSaveGlow] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [flowState, sendFlowEvent] = useMachine(editorFlowMachine);
+  const saveGlow = flowState.context.saveGlow;
+  const flowError = flowState.context.error;
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const executeInFlightRef = useRef(false);
   const isWorkflowNameValid = workflowName.trim().length > 0;
 
   const buildWorkflowPayload = useCallback(
@@ -117,40 +125,56 @@ export function EditorPage() {
     [workflowId, workflowName, nodes, edges],
   );
 
-  const saveWorkflowMutation = useMutation({
-    mutationFn: async () => {
-      const workflowData = buildWorkflowPayload();
+  const isSaving = flowState.matches('saving');
+  const isExecuting = flowState.matches('executing');
+  const isBusy = isSaving || isExecuting;
+  const canSave = isWorkflowNameValid && !isBusy && (!workflowId || isDirty);
 
-      if (workflowId) {
-        // Update existing workflow
-        return updateWorkflow(workflowId, workflowData);
-      } else {
-        // Create new workflow
-        return createWorkflow(workflowData);
-      }
-    },
-    onSuccess: (savedWorkflow) => {
-      // Update the workflow ID if it was a new workflow
+  const handleSave = useCallback(async () => {
+    if (!isWorkflowNameValid) {
+      sendFlowEvent({ type: 'SAVE_FAILURE', message: 'Workflow name is required' });
+      return;
+    }
+    if (isBusy) return;
+
+    sendFlowEvent({ type: 'SAVE_REQUEST' });
+    try {
+      const workflowData = buildWorkflowPayload();
+      const savedWorkflow = workflowId
+        ? await updateWorkflow(workflowId, workflowData)
+        : await createWorkflow(workflowData);
+
       if (!workflowId && savedWorkflow.id) {
         setWorkflow(savedWorkflow.id, savedWorkflow.name, nodes, edges);
         navigate('editor', { id: savedWorkflow.id });
       }
-      // Mark as clean (not dirty)
-      useEditorStore.setState({ isDirty: false });
-      // Trigger save glow animation
-      setSaveGlow(true);
-      setSaveError(null);
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(() => setSaveGlow(false), 1200);
-    },
-    onError: (error: Error) => {
-      setSaveError(error.message || 'Failed to save workflow');
-      setTimeout(() => setSaveError(null), 5000);
-    },
-  });
 
-  const executeWorkflowMutation = useMutation({
-    mutationFn: async () => {
+      useEditorStore.setState({ isDirty: false });
+      sendFlowEvent({ type: 'SAVE_SUCCESS' });
+
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(() => sendFlowEvent({ type: 'SAVE_GLOW_TIMEOUT' }), 1200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save workflow';
+      sendFlowEvent({ type: 'SAVE_FAILURE', message });
+    }
+  }, [
+    isWorkflowNameValid,
+    isBusy,
+    buildWorkflowPayload,
+    workflowId,
+    setWorkflow,
+    nodes,
+    edges,
+    navigate,
+    sendFlowEvent,
+  ]);
+
+  const handleExecute = useCallback(async () => {
+    if (!isWorkflowNameValid || isBusy) return;
+
+    sendFlowEvent({ type: 'EXECUTE_REQUEST' });
+    try {
       let targetWorkflowId = workflowId;
       if (!targetWorkflowId) {
         const createdWorkflow = await createWorkflow(buildWorkflowPayload());
@@ -158,36 +182,30 @@ export function EditorPage() {
         setWorkflow(createdWorkflow.id, createdWorkflow.name, nodes, edges);
         navigate('editor', { id: createdWorkflow.id });
       }
-      return executeWorkflow(targetWorkflowId, 'manual');
-    },
-    onSettled: () => {
-      executeInFlightRef.current = false;
-    },
-    onSuccess: (execution) => {
+
+      const execution = await executeWorkflow(targetWorkflowId, 'manual');
+      sendFlowEvent({ type: 'EXECUTE_SUCCESS' });
+
       if (execution?.id) {
         navigate('monitoring', { id: execution.id });
       } else {
         navigate('monitoring');
       }
-    },
-  });
-  const canSave = isWorkflowNameValid && !saveWorkflowMutation.isPending && (!workflowId || isDirty);
-
-  const handleSave = useCallback(() => {
-    if (!isWorkflowNameValid) {
-      setSaveError('Workflow name is required');
-      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to execute workflow';
+      sendFlowEvent({ type: 'EXECUTE_FAILURE', message });
     }
-    if (!saveWorkflowMutation.isPending) {
-      saveWorkflowMutation.mutate();
-    }
-  }, [isWorkflowNameValid, saveWorkflowMutation]);
-
-  const handleExecute = useCallback(() => {
-    if (!isWorkflowNameValid || saveWorkflowMutation.isPending || executeInFlightRef.current) return;
-    executeInFlightRef.current = true;
-    executeWorkflowMutation.mutate();
-  }, [isWorkflowNameValid, saveWorkflowMutation.isPending, executeWorkflowMutation]);
+  }, [
+    isWorkflowNameValid,
+    isBusy,
+    workflowId,
+    buildWorkflowPayload,
+    setWorkflow,
+    nodes,
+    edges,
+    navigate,
+    sendFlowEvent,
+  ]);
 
   const handleDragStart = useCallback((type: NodeType, startX: number, startY: number) => {
     setDragState({
@@ -343,9 +361,9 @@ export function EditorPage() {
             }`}
             aria-label="Save workflow (Cmd+S)"
           >
-            {saveWorkflowMutation.isPending ? 'Saving...' : 'Save'}
+            {isSaving ? 'Saving...' : 'Save'}
           </motion.button>
-          {saveError && (
+          {flowError && (
             <motion.span
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
@@ -353,19 +371,19 @@ export function EditorPage() {
               className="text-xs text-state-error"
               role="alert"
             >
-              {saveError}
+              {flowError}
             </motion.span>
           )}
           <motion.button
             type="button"
             onClick={handleExecute}
-            disabled={!isWorkflowNameValid || saveWorkflowMutation.isPending || executeWorkflowMutation.isPending}
+            disabled={!isWorkflowNameValid || isBusy}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.97 }}
             className="px-4 py-1.5 text-sm font-medium bg-control text-white rounded-lg hover:bg-control-hover hover:shadow-glow-lg transition-all focus:outline-none focus:ring-2 focus:ring-border-focus disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Execute workflow (Cmd+Enter)"
           >
-            {executeWorkflowMutation.isPending ? 'Executing...' : 'Execute'}
+            {isExecuting ? 'Executing...' : 'Execute'}
           </motion.button>
         </div>
       </header>

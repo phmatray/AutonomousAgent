@@ -1,10 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { listWorkflows, deleteWorkflow } from '@/lib/api/workflow';
 import { useRouter } from '@/lib/router';
 import { Trash2 } from 'lucide-react';
 import type { Workflow } from '@/types/workflow';
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useWorkflowCatalogActorRef, WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
@@ -84,70 +83,46 @@ function EmptyState({ onNavigateToEditor }: { onNavigateToEditor: (id?: string) 
 
 export function DashboardPage() {
   const { navigate } = useRouter();
-  const queryClient = useQueryClient();
-  const [workflowToDelete, setWorkflowToDelete] = useState<Workflow | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const {
-    data: workflows,
-    isLoading,
-    error,
-    refetch,
-    isFetching,
-  } = useQuery<Workflow[]>({
-    queryKey: ['workflows'],
-    queryFn: listWorkflows,
-    retry: false,
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: deleteWorkflow,
-    onSuccess: () => {
-      // Invalidate and refetch workflows list
-      queryClient.invalidateQueries({ queryKey: ['workflows'] });
-      setWorkflowToDelete(null);
-      setDeleteError(null);
-    },
-    onError: (error: Error) => {
-      console.error('Failed to delete workflow:', error);
-      setWorkflowToDelete(null);
-      setDeleteError('Failed to delete workflow');
-    },
-  });
+  const actorRef = useWorkflowCatalogActorRef();
+  const workflows = WorkflowCatalogContext.useSelector((state) => state.context.workflows);
+  const loadError = WorkflowCatalogContext.useSelector((state) => state.context.loadError);
+  const actionError = WorkflowCatalogContext.useSelector((state) => state.context.actionError);
+  const pendingDeleteId = WorkflowCatalogContext.useSelector((state) => state.context.pendingDeleteId);
+  const isLoading = WorkflowCatalogContext.useSelector((state) => state.matches('loading'));
+  const isDeleting = WorkflowCatalogContext.useSelector((state) => state.matches('deleting'));
 
   const navigateToEditor = (workflowId?: string) => {
-    console.log('Navigate to editor called with ID:', workflowId);
     if (workflowId) {
-      console.log('Navigating to editor with ID:', workflowId);
       navigate('editor', { id: workflowId });
     } else {
-      console.log('Navigating to editor without ID');
       navigate('editor');
     }
   };
 
   const handleDeleteClick = (e: React.MouseEvent, workflow: Workflow) => {
     e.stopPropagation(); // Prevent card click from firing
-    setDeleteError(null);
-    setWorkflowToDelete(workflow);
+    actorRef.send({ type: 'REQUEST_DELETE', id: workflow.id });
   };
 
   const confirmDelete = () => {
-    if (workflowToDelete) {
-      deleteMutation.mutate(workflowToDelete.id);
-    }
+    actorRef.send({ type: 'CONFIRM_DELETE' });
   };
 
   const cancelDelete = () => {
-    setWorkflowToDelete(null);
+    actorRef.send({ type: 'CANCEL_DELETE' });
   };
+
+  const workflowToDelete = useMemo(
+    () => workflows.find((workflow) => workflow.id === pendingDeleteId) ?? null,
+    [workflows, pendingDeleteId],
+  );
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-5xl mx-auto">
-          {deleteError && (
+          {actionError && (
             <div className="mb-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-300" role="alert">
-              {deleteError}
+              {actionError}
             </div>
           )}
           <div className="flex items-center justify-between mb-6">
@@ -173,7 +148,7 @@ export function DashboardPage() {
           </div>
         )}
 
-        {error && !isLoading && (
+        {loadError && !isLoading && (
           <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 text-center">
             <p className="text-gray-400 mb-2">Could not load workflows</p>
             <p className="text-xs text-gray-500">
@@ -181,11 +156,11 @@ export function DashboardPage() {
             </p>
             <button
               type="button"
-              onClick={() => refetch()}
-              disabled={isFetching}
+              onClick={() => actorRef.send({ type: 'RETRY' })}
+              disabled={isLoading}
               className="mt-4 mr-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isFetching ? 'Retrying...' : 'Retry'}
+              {isLoading ? 'Retrying...' : 'Retry'}
             </button>
             <button
               type="button"
@@ -197,11 +172,11 @@ export function DashboardPage() {
           </div>
         )}
 
-        {!isLoading && !error && workflows?.length === 0 && (
+        {!isLoading && !loadError && workflows.length === 0 && (
           <EmptyState onNavigateToEditor={navigateToEditor} />
         )}
 
-        {!isLoading && workflows && workflows.length > 0 && (
+        {!isLoading && workflows.length > 0 && (
           <div
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
             role="list"
@@ -227,6 +202,7 @@ export function DashboardPage() {
           cancelLabel="Cancel"
           onConfirm={confirmDelete}
           onCancel={cancelDelete}
+          confirmDisabled={isDeleting}
         />
       </div>
     </div>

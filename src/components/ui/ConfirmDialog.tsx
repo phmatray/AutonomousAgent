@@ -7,6 +7,7 @@ interface ConfirmDialogProps {
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -17,6 +18,7 @@ export function ConfirmDialog({
   message,
   confirmLabel = 'Delete',
   cancelLabel = 'Cancel',
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -89,6 +91,7 @@ export function ConfirmDialog({
               <button
                 type="button"
                 onClick={onConfirm}
+                disabled={confirmDisabled}
                 className="px-3 py-1.5 text-sm font-medium text-white bg-state-error rounded-lg hover:bg-state-error/90 transition-colors focus:outline-none focus:ring-2 focus:ring-border-focus"
                 aria-label={confirmLabel}
               >

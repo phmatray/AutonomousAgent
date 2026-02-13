@@ -1,10 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
+import { useMachine } from '@xstate/react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { WorkflowExecution, ExecutionLog, ExecutionStatus } from '@/types/workflow';
-import { listExecutions, getExecutionLogs } from '@/lib/api/workflow';
-import { cancelExecution } from '@/lib/api/claude';
 import { useRouter } from '@/lib/router';
+import { monitoringMachine } from './monitoring-machine';
 
 const STATUS_STYLES: Record<ExecutionStatus, string> = {
   IDLE: 'bg-gray-700 text-gray-300',
@@ -119,69 +118,38 @@ function LogViewer({ logs, isStreaming }: { logs: ExecutionLog[]; isStreaming: b
 export function MonitoringPage() {
   const { params } = useRouter();
   const requestedExecutionId = params.get('id');
-  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
-  const [streamingLogs, setStreamingLogs] = useState<ExecutionLog[]>([]);
-
-  const {
-    data: executions,
-    error: executionsError,
-    refetch: refetchExecutions,
-    isFetching: isFetchingExecutions,
-    isLoading: isLoadingExecutions,
-  } = useQuery<WorkflowExecution[]>({
-    queryKey: ['executions'],
-    queryFn: () => listExecutions(),
-    refetchInterval: 3000,
-    retry: false,
-  });
-
-  const { data: logs } = useQuery<ExecutionLog[]>({
-    queryKey: ['execution-logs', selectedExecutionId],
-    queryFn: () => getExecutionLogs(selectedExecutionId!),
-    enabled: !!selectedExecutionId,
-    retry: false,
-  });
+  const [state, send] = useMachine(monitoringMachine);
+  const executions = state.context.executions;
+  const selectedExecutionId = state.context.selectedExecutionId;
+  const logs = state.context.logs;
+  const streamingLogs = state.context.streamingLogs;
+  const executionsError = state.context.executionsError;
+  const isLoadingExecutions = state.matches('loadingExecutions');
+  const isFetchingExecutions = state.matches('refreshingExecutions');
 
   useEffect(() => {
-    if (!requestedExecutionId || !executions) return;
-    const exists = executions.some((execution) => execution.id === requestedExecutionId);
-    if (exists && selectedExecutionId !== requestedExecutionId) {
-      setSelectedExecutionId(requestedExecutionId);
-    }
-  }, [requestedExecutionId, executions, selectedExecutionId]);
-
-  useEffect(() => {
-    if (!selectedExecutionId || !executions) return;
-    const stillExists = executions.some((execution) => execution.id === selectedExecutionId);
-    if (!stillExists) {
-      setSelectedExecutionId(null);
-    }
-  }, [executions, selectedExecutionId]);
+    send({ type: 'REQUESTED_EXECUTION_CHANGED', executionId: requestedExecutionId });
+  }, [requestedExecutionId, send]);
 
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
     if (selectedExecutionId) {
       listen<ExecutionLog>(`execution-log-${selectedExecutionId}`, (event) => {
-        setStreamingLogs((prev) => [...prev, event.payload]);
+        send({ type: 'STREAM_LOG_RECEIVED', log: event.payload });
       }).then((fn) => {
         unlisten = fn;
       });
     }
     return () => {
       unlisten?.();
-      setStreamingLogs([]);
     };
-  }, [selectedExecutionId]);
+  }, [selectedExecutionId, send]);
 
-  const allLogs = [...(logs ?? []), ...streamingLogs];
-  const selectedExecution = executions?.find((e) => e.id === selectedExecutionId);
+  const allLogs = [...logs, ...streamingLogs];
+  const selectedExecution = executions.find((e) => e.id === selectedExecutionId);
   const isStreaming = selectedExecution?.status === 'RUNNING';
 
-  const handleCancel = async () => {
-    if (selectedExecutionId) {
-      await cancelExecution(selectedExecutionId);
-    }
-  };
+  const handleCancel = () => send({ type: 'CANCEL_SELECTED' });
 
   return (
     <div className="flex h-full">
@@ -200,7 +168,7 @@ export function MonitoringPage() {
             <p>Could not load executions</p>
             <button
               type="button"
-              onClick={() => refetchExecutions()}
+              onClick={() => send({ type: 'RETRY_EXECUTIONS' })}
               disabled={isFetchingExecutions}
               className="mt-2 px-2.5 py-1 rounded bg-red-800/70 text-red-100 hover:bg-red-700/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -214,17 +182,17 @@ export function MonitoringPage() {
               Loading executions...
             </p>
           )}
-          {!isLoadingExecutions && !executionsError && (!executions || executions.length === 0) && (
+          {!isLoadingExecutions && !executionsError && executions.length === 0 && (
             <p className="text-sm text-gray-500 text-center py-8">
               No executions yet
             </p>
           )}
-          {!executionsError && executions?.map((exec) => (
+          {!executionsError && executions.map((exec) => (
             <div key={exec.id} role="listitem">
               <ExecutionCard
                 execution={exec}
                 isSelected={exec.id === selectedExecutionId}
-                onSelect={() => setSelectedExecutionId(exec.id)}
+                onSelect={() => send({ type: 'SELECT_EXECUTION', executionId: exec.id })}
               />
             </div>
           ))}

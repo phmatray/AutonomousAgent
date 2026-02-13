@@ -1,13 +1,12 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useEffect, useCallback, useMemo, type ReactNode, createElement } from 'react';
+import { createActorContext } from '@xstate/react';
+import { routerMachine, getRouteFromHash, getParamsFromHash, type Route } from './router-machine';
+export type { Route } from './router-machine';
 
-export type Route = 'dashboard' | 'editor' | 'monitoring' | 'settings';
+const RouterMachineContext = createActorContext(routerMachine);
 
-function getRouteFromHash(hashValue: string): Route {
-  const hash = hashValue.replace('#/', '').replace('#', '');
-  // Extract route part before query string
-  const routePart = hash.split('?')[0];
-  const valid: Route[] = ['dashboard', 'editor', 'monitoring', 'settings'];
-  return valid.includes(routePart as Route) ? (routePart as Route) : 'dashboard';
+export function RouterProvider({ children }: { children: ReactNode }) {
+  return createElement(RouterMachineContext.Provider, null, children);
 }
 
 export function useRouter(): {
@@ -15,33 +14,23 @@ export function useRouter(): {
   navigate: (route: Route, queryParams?: Record<string, string>) => void;
   params: URLSearchParams;
 } {
-  const [hash, setHash] = useState<string>(window.location.hash);
+  const actorRef = RouterMachineContext.useActorRef();
+  const hash = RouterMachineContext.useSelector((state) => state.context.hash);
 
   useEffect(() => {
     function onHashChange() {
-      setHash(window.location.hash);
+      actorRef.send({ type: 'HASH_CHANGED', hash: window.location.hash });
     }
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
+  }, [actorRef]);
 
   const navigate = useCallback((newRoute: Route, queryParams?: Record<string, string>) => {
-    console.log('Router navigate called:', { newRoute, queryParams });
-    if (queryParams && Object.keys(queryParams).length > 0) {
-      const params = new URLSearchParams(queryParams);
-      const newHash = `#/${newRoute}?${params.toString()}`;
-      console.log('Setting hash to:', newHash);
-      window.location.hash = newHash;
-      console.log('Hash after setting:', window.location.hash);
-    } else {
-      console.log('Setting hash to:', `#/${newRoute}`);
-      window.location.hash = `#/${newRoute}`;
-      console.log('Hash after setting:', window.location.hash);
-    }
-  }, []);
+    actorRef.send({ type: 'NAVIGATE', route: newRoute, queryParams });
+  }, [actorRef]);
 
   const route = useMemo(() => getRouteFromHash(hash), [hash]);
-  const params = useMemo(() => new URLSearchParams(hash.split('?')[1] ?? ''), [hash]);
+  const params = useMemo(() => getParamsFromHash(hash), [hash]);
 
   return { route, navigate, params };
 }

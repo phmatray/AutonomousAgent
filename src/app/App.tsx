@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useRouter } from '@/lib/router';
+import { RouterProvider, useRouter } from '@/lib/router';
 import { Navigation } from '@/app/components/Navigation';
 import { DashboardPage } from '@/app/routes/dashboard/DashboardPage';
 // import { BacklogPage } from '@/app/routes/backlog/BacklogPage'; // TODO: Implement backlog feature
 import { EditorPage } from '@/app/routes/editor/EditorPage';
 import { MonitoringPage } from '@/app/routes/monitoring/MonitoringPage';
 import { SettingsPage } from '@/app/routes/settings/SettingsPage';
+import { WorkflowCatalogProvider } from '@/app/state/workflow-catalog-machine';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,7 +37,11 @@ function AppContent() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AppContent />
+      <RouterProvider>
+        <WorkflowCatalogProvider>
+          <AppContent />
+        </WorkflowCatalogProvider>
+      </RouterProvider>
     </QueryClientProvider>
   );
 }

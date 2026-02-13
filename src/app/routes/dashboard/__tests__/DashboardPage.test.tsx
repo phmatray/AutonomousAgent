@@ -3,6 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DashboardPage } from '../DashboardPage';
+import { RouterProvider } from '@/lib/router';
+import { WorkflowCatalogProvider } from '@/app/state/workflow-catalog-machine';
 import { mockInvoke } from '@/test/mocks/tauri';
 import type { Workflow } from '@/types/workflow';
 
@@ -46,7 +48,11 @@ function renderWithQueryClient(ui: React.ReactElement) {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      {ui}
+      <RouterProvider>
+        <WorkflowCatalogProvider>
+          {ui}
+        </WorkflowCatalogProvider>
+      </RouterProvider>
     </QueryClientProvider>,
   );
 }
