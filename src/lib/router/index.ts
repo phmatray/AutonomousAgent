@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 
 export type Route = 'dashboard' | 'editor' | 'monitoring' | 'settings';
 
-function getRouteFromHash(): Route {
-  const hash = window.location.hash.replace('#/', '').replace('#', '');
+function getRouteFromHash(hashValue: string): Route {
+  const hash = hashValue.replace('#/', '').replace('#', '');
   // Extract route part before query string
   const routePart = hash.split('?')[0];
   const valid: Route[] = ['dashboard', 'editor', 'monitoring', 'settings'];
@@ -15,11 +15,11 @@ export function useRouter(): {
   navigate: (route: Route, queryParams?: Record<string, string>) => void;
   params: URLSearchParams;
 } {
-  const [route, setRoute] = useState<Route>(getRouteFromHash);
+  const [hash, setHash] = useState<string>(window.location.hash);
 
   useEffect(() => {
     function onHashChange() {
-      setRoute(getRouteFromHash());
+      setHash(window.location.hash);
     }
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
@@ -40,7 +40,8 @@ export function useRouter(): {
     }
   }, []);
 
-  const params = new URLSearchParams(window.location.hash.split('?')[1] ?? '');
+  const route = useMemo(() => getRouteFromHash(hash), [hash]);
+  const params = useMemo(() => new URLSearchParams(hash.split('?')[1] ?? ''), [hash]);
 
   return { route, navigate, params };
 }

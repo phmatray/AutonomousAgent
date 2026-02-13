@@ -173,3 +173,17 @@ test('navigates through top-level routes', async ({ page }) => {
   await expect(page).toHaveURL(/#\/dashboard/);
   await expect(page.getByRole('heading', { name: 'Workflows', exact: true })).toBeVisible();
 });
+
+test('clears stale editor state when workflow id does not exist', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate((workflow) => {
+    const state = (window as Window & { __E2E_STATE__?: { workflows: unknown[] } }).__E2E_STATE__;
+    if (state) state.workflows = [workflow];
+  }, mockWorkflow);
+
+  await page.goto('/#/editor?id=wf-123');
+  await expect(page.getByLabel('Workflow name')).toHaveValue('Sample Workflow');
+
+  await page.goto('/#/editor?id=wf-missing');
+  await expect(page.getByLabel('Workflow name')).toHaveValue('Untitled Workflow');
+});

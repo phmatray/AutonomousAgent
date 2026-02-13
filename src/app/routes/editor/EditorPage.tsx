@@ -36,7 +36,7 @@ export function EditorPage() {
   const edges = useEditorStore((s) => s.edges);
 
   // Fetch workflow if ID is provided in URL
-  const { data: fetchedWorkflow } = useQuery<Workflow | null>({
+  const { data: fetchedWorkflow, isFetched: hasFetchedWorkflow } = useQuery<Workflow | null>({
     queryKey: ['workflow', urlWorkflowId],
     queryFn: () => (urlWorkflowId ? getWorkflow(urlWorkflowId) : null),
     enabled: !!urlWorkflowId,
@@ -45,33 +45,36 @@ export function EditorPage() {
 
   // Load workflow into editor when fetched
   useEffect(() => {
-    if (fetchedWorkflow && urlWorkflowId) {
-      // Convert workflow data to editor format
-      const editorNodes = fetchedWorkflow.nodes.map((node) => ({
-        id: node.id,
-        type: 'workflowNode' as const,
-        position: node.position || { x: 0, y: 0 },
-        data: {
-          label: node.type,
-          nodeType: node.type as NodeType,
-          config: (node.config as Record<string, unknown>) || {},
-        },
-      }));
+    if (urlWorkflowId) {
+      if (fetchedWorkflow) {
+        const editorNodes = fetchedWorkflow.nodes.map((node) => ({
+          id: node.id,
+          type: 'workflowNode' as const,
+          position: node.position || { x: 0, y: 0 },
+          data: {
+            label: node.type,
+            nodeType: node.type as NodeType,
+            config: (node.config as Record<string, unknown>) || {},
+          },
+        }));
 
-      const editorEdges = fetchedWorkflow.edges.map((edge) => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        sourceHandle: edge.sourceHandle || undefined,
-        targetHandle: edge.targetHandle || undefined,
-      }));
+        const editorEdges = fetchedWorkflow.edges.map((edge) => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          sourceHandle: edge.sourceHandle || undefined,
+          targetHandle: edge.targetHandle || undefined,
+        }));
 
-      setWorkflow(fetchedWorkflow.id, fetchedWorkflow.name, editorNodes, editorEdges);
-    } else if (!urlWorkflowId && workflowId) {
+        setWorkflow(fetchedWorkflow.id, fetchedWorkflow.name, editorNodes, editorEdges);
+      } else if (hasFetchedWorkflow) {
+        clearEditor();
+      }
+    } else if (workflowId) {
       // Clear editor if navigating to /editor without an ID
       clearEditor();
     }
-  }, [fetchedWorkflow, urlWorkflowId, setWorkflow, clearEditor, workflowId]);
+  }, [fetchedWorkflow, hasFetchedWorkflow, urlWorkflowId, setWorkflow, clearEditor, workflowId]);
 
   const pendingDeleteInfo = useMemo(() => {
     if (!pendingDeleteNodeId) return null;
