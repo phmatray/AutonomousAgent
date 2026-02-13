@@ -1,39 +1,24 @@
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getAuthStatus, authenticateGitHub } from '@/lib/api/github';
+import { useEffect } from 'react';
+import { useMachine } from '@xstate/react';
+import { settingsMachine } from './settings-machine';
 
 export function SettingsPage() {
-  const queryClient = useQueryClient();
-  const [token, setToken] = useState('');
-  const [showToken, setShowToken] = useState(false);
-
-  const {
-    data: authStatus,
-    isLoading: isCheckingAuth,
-    isError: isAuthStatusError,
-    refetch: refetchAuthStatus,
-    isFetching: isFetchingAuthStatus,
-  } = useQuery({
-    queryKey: ['github-auth'],
-    queryFn: getAuthStatus,
-    retry: false,
-  });
-
-  const saveTokenMutation = useMutation({
-    mutationFn: (newToken: string) => authenticateGitHub(newToken),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['github-auth'] });
-      setToken('');
-      setShowToken(false);
-    },
-  });
+  const [state, send] = useMachine(settingsMachine);
+  const authStatus = state.context.authStatus;
+  const token = state.context.token;
+  const showToken = state.context.showToken;
+  const saveFeedback = state.context.saveFeedback;
+  const isCheckingAuth = state.matches('checkingStatus');
+  const isAuthStatusError = state.context.statusError;
+  const isFetchingAuthStatus = isCheckingAuth;
+  const isSaving = state.matches('savingToken');
 
   useEffect(() => {
-    if (saveTokenMutation.isSuccess || saveTokenMutation.isError) {
-      const timer = setTimeout(() => saveTokenMutation.reset(), 3000);
+    if (saveFeedback !== 'idle') {
+      const timer = setTimeout(() => send({ type: 'CLEAR_SAVE_FEEDBACK' }), 3000);
       return () => clearTimeout(timer);
     }
-  }, [saveTokenMutation.isSuccess, saveTokenMutation.isError, saveTokenMutation]);
+  }, [saveFeedback, send]);
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
@@ -74,7 +59,7 @@ export function SettingsPage() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => refetchAuthStatus()}
+                  onClick={() => send({ type: 'RETRY_STATUS' })}
                   disabled={isFetchingAuthStatus}
                   className="px-3 py-1.5 text-xs bg-red-800/70 text-red-100 rounded hover:bg-red-700/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -87,9 +72,7 @@ export function SettingsPage() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (token.trim()) {
-                saveTokenMutation.mutate(token.trim());
-              }
+              send({ type: 'SUBMIT_TOKEN' });
             }}
             className="space-y-4"
           >
@@ -105,7 +88,7 @@ export function SettingsPage() {
                   id="github-token"
                   type={showToken ? 'text' : 'password'}
                   value={token}
-                  onChange={(e) => setToken(e.target.value)}
+                  onChange={(e) => send({ type: 'TOKEN_CHANGED', value: e.target.value })}
                   placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                   className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-sm text-white font-mono pr-16 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   aria-describedby="token-help"
@@ -113,7 +96,7 @@ export function SettingsPage() {
                 />
                 <button
                   type="button"
-                  onClick={() => setShowToken(!showToken)}
+                  onClick={() => send({ type: 'TOGGLE_SHOW_TOKEN' })}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-300 px-2 py-1"
                   aria-label={showToken ? 'Hide token' : 'Show token'}
                   aria-pressed={showToken}
@@ -130,17 +113,17 @@ export function SettingsPage() {
             <div className="flex items-center gap-3">
               <button
                 type="submit"
-                disabled={!token.trim() || saveTokenMutation.isPending}
+                disabled={!token.trim() || isSaving}
                 className="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
-                {saveTokenMutation.isPending ? 'Saving...' : 'Save Token'}
+                {isSaving ? 'Saving...' : 'Save Token'}
               </button>
-              {saveTokenMutation.isSuccess && (
+              {saveFeedback === 'success' && (
                 <span className="text-sm text-green-400" role="status" aria-live="polite">
                   Token saved successfully
                 </span>
               )}
-              {saveTokenMutation.isError && (
+              {saveFeedback === 'error' && (
                 <span className="text-sm text-red-400" role="alert">
                   Failed to save token
                 </span>
