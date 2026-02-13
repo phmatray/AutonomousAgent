@@ -354,3 +354,43 @@ test('executes saved workflow from editor', async ({ page }) => {
   expect(executeCalls[0]?.args?.workflowId).toBe('wf-123');
   expect(executeCalls[0]?.args?.triggerType).toBe('manual');
 });
+
+test('prevents duplicate execute requests while execution is starting', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate((workflow) => {
+    const state = (window as Window & {
+      __E2E_STATE__?: { workflows: unknown[] };
+    }).__E2E_STATE__;
+    if (state) state.workflows = [workflow];
+  }, mockWorkflow);
+
+  await page.goto('/#/editor?id=wf-123');
+  await page.evaluate(() => {
+    const tauri = (window as Window & {
+      __TAURI_INTERNALS__?: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+    }).__TAURI_INTERNALS__;
+    if (!tauri) return;
+    const originalInvoke = tauri.invoke.bind(tauri);
+    tauri.invoke = async (cmd, args = {}) => {
+      if (cmd === 'execute_workflow') {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      return originalInvoke(cmd, args);
+    };
+  });
+
+  const executeBtn = page.getByRole('button', { name: 'Execute workflow (Cmd+Enter)' });
+  await executeBtn.dblclick();
+  await page.waitForTimeout(700);
+
+  const executeCalls = await page.evaluate(() => {
+    const state = (window as Window & {
+      __E2E_STATE__?: {
+        invokeLog: Array<{ cmd: string }>;
+      };
+    }).__E2E_STATE__;
+    return (state?.invokeLog ?? []).filter((entry) => entry.cmd === 'execute_workflow');
+  });
+
+  expect(executeCalls).toHaveLength(1);
+});

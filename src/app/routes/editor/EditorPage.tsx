@@ -89,6 +89,7 @@ export function EditorPage() {
   const [saveGlow, setSaveGlow] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const executeInFlightRef = useRef(false);
 
   const saveWorkflowMutation = useMutation({
     mutationFn: async () => {
@@ -141,6 +142,16 @@ export function EditorPage() {
     },
   });
 
+  const executeWorkflowMutation = useMutation({
+    mutationFn: async () => {
+      if (!workflowId) return null;
+      return executeWorkflow(workflowId, 'manual');
+    },
+    onSettled: () => {
+      executeInFlightRef.current = false;
+    },
+  });
+
   const handleSave = useCallback(() => {
     if (!saveWorkflowMutation.isPending) {
       saveWorkflowMutation.mutate();
@@ -148,9 +159,10 @@ export function EditorPage() {
   }, [saveWorkflowMutation]);
 
   const handleExecute = useCallback(() => {
-    if (!workflowId) return;
-    executeWorkflow(workflowId, 'manual');
-  }, [workflowId]);
+    if (!workflowId || executeInFlightRef.current) return;
+    executeInFlightRef.current = true;
+    executeWorkflowMutation.mutate();
+  }, [workflowId, executeWorkflowMutation]);
 
   const handleDragStart = useCallback((type: NodeType, startX: number, startY: number) => {
     setDragState({
@@ -306,12 +318,13 @@ export function EditorPage() {
           <motion.button
             type="button"
             onClick={handleExecute}
+            disabled={executeWorkflowMutation.isPending}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.97 }}
-            className="px-4 py-1.5 text-sm font-medium bg-control text-white rounded-lg hover:bg-control-hover hover:shadow-glow-lg transition-all focus:outline-none focus:ring-2 focus:ring-border-focus"
+            className="px-4 py-1.5 text-sm font-medium bg-control text-white rounded-lg hover:bg-control-hover hover:shadow-glow-lg transition-all focus:outline-none focus:ring-2 focus:ring-border-focus disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Execute workflow (Cmd+Enter)"
           >
-            Execute
+            {executeWorkflowMutation.isPending ? 'Executing...' : 'Execute'}
           </motion.button>
         </div>
       </header>
