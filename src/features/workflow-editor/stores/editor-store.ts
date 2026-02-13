@@ -53,6 +53,8 @@ interface EditorState {
   confirmDelete: () => void;
   cancelDelete: () => void;
   updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
+  setGraph: (nodes: WorkflowNode[], edges: WorkflowEdge[]) => void;
+  clearGraph: () => void;
   setWorkflow: (id: string, name: string, nodes: WorkflowNode[], edges: WorkflowEdge[]) => void;
   setWorkflowName: (name: string) => void;
   clearEditor: () => void;
@@ -195,6 +197,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         n.id === id ? { ...n, data: { ...n.data, config } } : n,
       ),
       isDirty: true,
+    });
+  },
+
+  setGraph: (nodes, edges) => {
+    set({
+      nodes,
+      edges,
+      selectedNodeId: null,
+      pendingDeleteNodeId: null,
+      isDirty: false,
+    });
+  },
+
+  clearGraph: () => {
+    set({
+      nodes: [],
+      edges: [],
+      selectedNodeId: null,
+      pendingDeleteNodeId: null,
+      isDirty: false,
     });
   },
 

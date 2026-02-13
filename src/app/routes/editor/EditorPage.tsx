@@ -10,6 +10,7 @@ import { useEditorStore } from '@/features/workflow-editor/stores/editor-store';
 import { createWorkflow, updateWorkflow, getWorkflow, executeWorkflow } from '@/lib/api/workflow';
 import { useRouter } from '@/lib/router';
 import { editorFlowMachine } from './editor-flow-machine';
+import { editorDomainMachine } from './editor-domain-machine';
 import { WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
 import type { NodeType, Workflow } from '@/types/workflow';
 
@@ -26,19 +27,20 @@ export function EditorPage() {
   const urlWorkflowId = params.get('id');
   const catalogWorkflows = WorkflowCatalogContext.useSelector((state) => state.context.workflows);
 
-  const workflowId = useEditorStore((s) => s.workflowId);
-  const workflowName = useEditorStore((s) => s.workflowName);
-  const setWorkflowName = useEditorStore((s) => s.setWorkflowName);
-  const isDirty = useEditorStore((s) => s.isDirty);
+  const [domainState, sendDomainEvent] = useMachine(editorDomainMachine);
+  const workflowId = domainState.context.workflowId;
+  const workflowName = domainState.context.workflowName;
+  const isDirty = domainState.context.isDirty;
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId);
   const pendingDeleteNodeId = useEditorStore((s) => s.pendingDeleteNodeId);
   const confirmDelete = useEditorStore((s) => s.confirmDelete);
   const cancelDelete = useEditorStore((s) => s.cancelDelete);
-  const setWorkflow = useEditorStore((s) => s.setWorkflow);
-  const clearEditor = useEditorStore((s) => s.clearEditor);
+  const setGraph = useEditorStore((s) => s.setGraph);
+  const clearGraph = useEditorStore((s) => s.clearGraph);
   const addNode = useEditorStore((s) => s.addNode);
   const nodes = useEditorStore((s) => s.nodes);
   const edges = useEditorStore((s) => s.edges);
+  const suppressGraphDirtyRef = useRef(false);
 
   // Fetch workflow if ID is provided in URL
   const { data: fetchedWorkflow, isFetched: hasFetchedWorkflow } = useQuery<Workflow | null>({
@@ -75,15 +77,41 @@ export function EditorPage() {
           targetHandle: edge.targetHandle || undefined,
         }));
 
-        setWorkflow(fetchedWorkflow.id, fetchedWorkflow.name, editorNodes, editorEdges);
+        suppressGraphDirtyRef.current = true;
+        setGraph(editorNodes, editorEdges);
+        sendDomainEvent({
+          type: 'WORKFLOW_LOADED',
+          id: fetchedWorkflow.id,
+          name: fetchedWorkflow.name,
+        });
       } else if (hasFetchedWorkflow) {
-        clearEditor();
+        suppressGraphDirtyRef.current = true;
+        clearGraph();
+        sendDomainEvent({ type: 'WORKFLOW_CLEARED' });
       }
     } else if (workflowId) {
       // Clear editor if navigating to /editor without an ID
-      clearEditor();
+      suppressGraphDirtyRef.current = true;
+      clearGraph();
+      sendDomainEvent({ type: 'WORKFLOW_CLEARED' });
     }
-  }, [fetchedWorkflow, hasFetchedWorkflow, urlWorkflowId, setWorkflow, clearEditor, workflowId]);
+  }, [
+    fetchedWorkflow,
+    hasFetchedWorkflow,
+    urlWorkflowId,
+    setGraph,
+    clearGraph,
+    workflowId,
+    sendDomainEvent,
+  ]);
+
+  useEffect(() => {
+    if (suppressGraphDirtyRef.current) {
+      suppressGraphDirtyRef.current = false;
+      return;
+    }
+    sendDomainEvent({ type: 'GRAPH_CHANGED' });
+  }, [nodes, edges, sendDomainEvent]);
 
   const pendingDeleteInfo = useMemo(() => {
     if (!pendingDeleteNodeId) return null;
@@ -145,11 +173,19 @@ export function EditorPage() {
         : await createWorkflow(workflowData);
 
       if (!workflowId && savedWorkflow.id) {
-        setWorkflow(savedWorkflow.id, savedWorkflow.name, nodes, edges);
+        sendDomainEvent({
+          type: 'WORKFLOW_CREATED',
+          id: savedWorkflow.id,
+          name: savedWorkflow.name,
+        });
         navigate('editor', { id: savedWorkflow.id });
       }
 
-      useEditorStore.setState({ isDirty: false });
+      sendDomainEvent({
+        type: 'WORKFLOW_SAVED',
+        id: savedWorkflow.id,
+        name: savedWorkflow.name,
+      });
       sendFlowEvent({ type: 'SAVE_SUCCESS' });
 
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -163,10 +199,8 @@ export function EditorPage() {
     isBusy,
     buildWorkflowPayload,
     workflowId,
-    setWorkflow,
-    nodes,
-    edges,
     navigate,
+    sendDomainEvent,
     sendFlowEvent,
   ]);
 
@@ -179,7 +213,11 @@ export function EditorPage() {
       if (!targetWorkflowId) {
         const createdWorkflow = await createWorkflow(buildWorkflowPayload());
         targetWorkflowId = createdWorkflow.id;
-        setWorkflow(createdWorkflow.id, createdWorkflow.name, nodes, edges);
+        sendDomainEvent({
+          type: 'WORKFLOW_CREATED',
+          id: createdWorkflow.id,
+          name: createdWorkflow.name,
+        });
         navigate('editor', { id: createdWorkflow.id });
       }
 
@@ -200,10 +238,8 @@ export function EditorPage() {
     isBusy,
     workflowId,
     buildWorkflowPayload,
-    setWorkflow,
-    nodes,
-    edges,
     navigate,
+    sendDomainEvent,
     sendFlowEvent,
   ]);
 
@@ -316,7 +352,7 @@ export function EditorPage() {
             id="workflow-name"
             type="text"
             value={workflowName}
-            onChange={(e) => setWorkflowName(e.target.value)}
+            onChange={(e) => sendDomainEvent({ type: 'WORKFLOW_NAME_CHANGED', name: e.target.value })}
             className="bg-transparent border border-transparent text-text-primary text-lg font-display font-semibold rounded px-2 py-1 hover:border-border-primary focus:outline-none focus:ring-2 focus:ring-border-focus transition-colors"
             aria-label="Workflow name"
             aria-invalid={!isWorkflowNameValid}
