@@ -8,6 +8,8 @@ export interface E2EState {
   executions: RecordAny[];
   logsByExecutionId: Record<string, RecordAny[]>;
   invokeLog: Array<{ cmd: string; args: RecordAny }>;
+  commandFailures: Record<string, string>;
+  commandDelaysMs: Record<string, number>;
 }
 
 function createState(): E2EState {
@@ -17,7 +19,21 @@ function createState(): E2EState {
     executions: [],
     logsByExecutionId: {},
     invokeLog: [],
+    commandFailures: {},
+    commandDelaysMs: {},
   };
+}
+
+function parseJsonQueryParam<T>(name: string): T | null {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get(name);
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
 }
 
 export function installWebDriverTauriMock() {
@@ -26,11 +42,35 @@ export function installWebDriverTauriMock() {
   }
 
   const state = createState();
+  const preloadedState = parseJsonQueryParam<Partial<E2EState>>('e2e_state');
+  const preloadedFailures = parseJsonQueryParam<Record<string, string>>('e2e_fail');
+  const preloadedDelays = parseJsonQueryParam<Record<string, number>>('e2e_delay');
+
+  if (preloadedState) {
+    Object.assign(state, preloadedState);
+  }
+  if (preloadedFailures) {
+    state.commandFailures = { ...state.commandFailures, ...preloadedFailures };
+  }
+  if (preloadedDelays) {
+    state.commandDelaysMs = { ...state.commandDelaysMs, ...preloadedDelays };
+  }
+
   window.__E2E_STATE__ = state;
 
-  mockIPC((cmd, payload = {}) => {
+  mockIPC(async (cmd, payload = {}) => {
     const args = (payload ?? {}) as RecordAny;
     state.invokeLog.push({ cmd, args });
+
+    const delayMs = state.commandDelaysMs[cmd];
+    if (typeof delayMs === 'number' && delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+
+    const failureMessage = state.commandFailures[cmd];
+    if (failureMessage) {
+      throw new Error(failureMessage);
+    }
 
     if (cmd === 'is_initialized') {
       return {

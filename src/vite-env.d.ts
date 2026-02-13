@@ -8,6 +8,8 @@ declare global {
       executions: Array<Record<string, unknown>>;
       logsByExecutionId: Record<string, Array<Record<string, unknown>>>;
       invokeLog: Array<{ cmd: string; args: Record<string, unknown> }>;
+      commandFailures: Record<string, string>;
+      commandDelaysMs: Record<string, number>;
     };
   }
 }
