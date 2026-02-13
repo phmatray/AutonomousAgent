@@ -10,7 +10,12 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "typecheck": "tsc --noEmit",
+    "fmt:rust": "cd src-tauri && cargo fmt --check",
+    "lint:rust": "cd src-tauri && cargo clippy -- -D warnings",
     "test": "vitest",
+    "test:frontend": "vitest run",
+    "check": "npm run fmt:rust && npm run lint:rust && npm run typecheck && npm run test:frontend",
     "test:e2e": "node --test e2e/webdriver.spec.mjs",
     "test:coverage": "vitest run --coverage",
     "prepare": "husky"

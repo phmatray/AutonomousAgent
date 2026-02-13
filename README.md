@@ -141,6 +141,12 @@ The built application will be available in `src-tauri/target/release`.
 
 ### Running Tests
 
+Run all local quality gates (Rust fmt/clippy + TypeScript typecheck + frontend tests):
+
+```bash
+npm run check
+```
+
 Run the Rust test suite:
 
 ```bash
@@ -179,7 +185,7 @@ For a detailed architecture overview, see [docs/ARCHITECTURE.md](docs/ARCHITECTU
 
 ### Tauri IPC Commands
 
-The frontend communicates with the backend via Tauri's invoke system. All 23 registered commands:
+The frontend communicates with the backend via Tauri's invoke system. The app currently exposes 34 registered commands:
 
 | Category | Command | Description |
 |----------|---------|-------------|
@@ -188,14 +194,17 @@ The frontend communicates with the backend via Tauri's invoke system. All 23 reg
 | | `create_workflow` | Create new workflow |
 | | `update_workflow` | Update existing workflow |
 | | `delete_workflow` | Delete workflow |
+| | `preflight_workflow` | Validate workflow before execution |
 | | `execute_workflow` | Execute a workflow |
 | | `list_executions` | List execution history |
 | | `get_execution_logs` | Get logs for an execution |
+| | `copy_debug_bundle` | Export execution debug bundle |
 | **GitHub** | `authenticate_github` | Authenticate with token |
-| | `get_auth_status` | Check authentication status |
+| | `list_github_credentials` | List saved GitHub credential entries |
 | | `list_repositories` | List user repositories |
 | | `list_issues` | List repository issues |
 | | `create_pull_request` | Create a PR |
+| | `get_auth_status` | Check authentication status |
 | **Claude** | `execute_plan` | Run Claude CLI prompt |
 | | `cancel_execution` | Cancel running execution |
 | | `list_running_executions` | List active executions |
@@ -209,6 +218,11 @@ The frontend communicates with the backend via Tauri's invoke system. All 23 reg
 | | `git_push` | Push to remote |
 | | `git_pull` | Pull from remote |
 | | `git_clone` | Clone repository |
+| **Backlog** | `list_backlog_items` | List backlog items |
+| | `sync_github_issues_to_backlog` | Sync GitHub issues into backlog |
+| | `link_backlog_to_workflow` | Link a backlog item to a workflow |
+| | `delete_backlog_item` | Delete backlog item |
+| **System** | `is_initialized` | Check app initialization status |
 
 ### Workflow Nodes
 
@@ -306,7 +320,7 @@ Supported types and their gitmoji:
 - [x] Phase 2: Backend Services (storage, GitHub client, Claude executor, Git service)
 - [x] Phase 3: Workflow Engine (DAG executor, node registry, state machine, 13 node types)
 - [x] Phase 4: React UI (dashboard, editor, monitoring, settings)
-- [x] Phase 5: Integration & Testing (API alignment, 20 tests, documentation)
+- [x] Phase 5: Integration & Testing (API alignment, test suites, documentation)
 
 ## License
 
