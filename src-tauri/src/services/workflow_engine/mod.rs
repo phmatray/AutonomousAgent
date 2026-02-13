@@ -51,11 +51,13 @@ impl WorkflowEngine {
         &self,
         pool: SqlitePool,
         github: Arc<crate::services::GitHubClient>,
+        storage: Arc<crate::services::StorageService>,
         git: Arc<crate::services::GitService>,
     ) {
         *self.db_pool.write().await = Some(pool);
         *self.services.write().await = Some(ServiceProvider {
             github,
+            storage,
             claude: Arc::new(ClaudeProvider::new()),
             git,
         });

@@ -31,8 +31,19 @@ export interface GitHubPR {
   title: string;
 }
 
+export interface GitHubCredential {
+  id: string;
+  username: string;
+  label: string;
+  is_default: boolean;
+}
+
 export async function authenticateGitHub(token: string): Promise<AuthResult> {
   return invoke('authenticate_github', { token });
+}
+
+export async function listGitHubCredentials(): Promise<GitHubCredential[]> {
+  return invoke('list_github_credentials');
 }
 
 export async function listRepositories(): Promise<GitHubRepo[]> {

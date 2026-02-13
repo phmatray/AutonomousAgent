@@ -12,6 +12,58 @@ fn get_required_string(config: &Value, key: &str) -> Result<String> {
         .map(String::from)
 }
 
+fn get_optional_string<'a>(config: &'a Value, key: &str) -> Option<&'a str> {
+    config
+        .get(key)
+        .and_then(|value| value.as_str())
+        .and_then(|value| {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+}
+
+const ACTIVE_SESSION_CREDENTIAL_ID: &str = "__active_session__";
+
+async fn authenticate_for_config(
+    config: &Value,
+    services: &ServiceProvider,
+    require_auth: bool,
+) -> Result<Option<String>> {
+    let credential_id = get_optional_string(config, "credential_id");
+    if credential_id == Some(ACTIVE_SESSION_CREDENTIAL_ID) {
+        if services.github.get_authenticated_user().await.is_ok() {
+            return Ok(None);
+        }
+        return Err(AppError::Authentication(
+            "Selected session credential is unavailable; reconnect in Settings".to_string(),
+        ));
+    }
+
+    match services
+        .storage
+        .get_github_token_for_credential_or_default(credential_id)
+    {
+        Ok(token) => {
+            services.github.authenticate(&token).await?;
+            Ok(Some(token))
+        }
+        Err(err) => {
+            if services.github.get_authenticated_user().await.is_ok() {
+                Ok(None)
+            } else if require_auth || credential_id.is_some() {
+                Err(err)
+            } else {
+                // Allow unauthenticated github.sync for public repositories.
+                Ok(None)
+            }
+        }
+    }
+}
+
 /// Clone or pull a GitHub repository to ensure it is up to date.
 ///
 /// Config:
@@ -53,6 +105,7 @@ impl NodeExecutor for GithubSyncNode {
         let owner = get_required_string(config, "owner")?;
         let repo = get_required_string(config, "repo")?;
         let path = get_required_string(config, "path")?;
+        let token = authenticate_for_config(config, services, false).await?;
 
         let repo_path = format!("{}/{}", path, repo);
 
@@ -60,7 +113,14 @@ impl NodeExecutor for GithubSyncNode {
         if std::path::Path::new(&repo_path).join(".git").exists() {
             services.git.pull(&repo_path).await?;
         } else {
-            let url = format!("https://github.com/{}/{}.git", owner, repo);
+            let url = if let Some(token) = token {
+                format!(
+                    "https://x-access-token:{}@github.com/{}/{}.git",
+                    token, owner, repo
+                )
+            } else {
+                format!("https://github.com/{}/{}.git", owner, repo)
+            };
             services.git.clone_repo(&url, &repo_path).await?;
         }
 
@@ -112,6 +172,7 @@ impl NodeExecutor for GithubReadIssuesNode {
         services: &ServiceProvider,
     ) -> Result<Value> {
         let resolved = context.resolve_value(config)?;
+        authenticate_for_config(&resolved, services, true).await?;
         let owner = resolved["owner"]
             .as_str()
             .ok_or_else(|| AppError::Validation("owner must be a string".into()))?;
@@ -186,6 +247,7 @@ impl NodeExecutor for GithubCreatePrNode {
         services: &ServiceProvider,
     ) -> Result<Value> {
         let resolved = context.resolve_value(config)?;
+        authenticate_for_config(&resolved, services, true).await?;
         let owner = get_required_string(&resolved, "owner")?;
         let repo = get_required_string(&resolved, "repo")?;
         let title = get_required_string(&resolved, "title")?;

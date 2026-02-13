@@ -67,6 +67,7 @@ fn main() {
                         *engine_svc.write().await =
                             Some(services::workflow_engine::node_registry::ServiceProvider {
                                 github: github_client,
+                                storage: Arc::new(services::StorageService::new()),
                                 claude: Arc::new(
                                     services::workflow_engine::node_registry::ClaudeProvider::new(),
                                 ),
@@ -104,6 +105,7 @@ fn main() {
             commands::workflow::copy_debug_bundle,
             // GitHub commands
             commands::github::authenticate_github,
+            commands::github::list_github_credentials,
             commands::github::list_repositories,
             commands::github::list_issues,
             commands::github::create_pull_request,

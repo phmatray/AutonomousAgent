@@ -1,6 +1,7 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useEditorStore } from '@/features/workflow-editor/stores/editor-store';
 import { getNodeSchema, type FieldSchema } from '@/features/workflow-editor/config-schemas';
+import { listGitHubCredentials } from '@/lib/api/github';
 import {
   TextInput,
   NumberInput,
@@ -64,9 +65,18 @@ interface DynamicFieldProps {
   value: unknown;
   onChange: (key: string, value: unknown) => void;
   variables: TemplateVariable[];
+  optionsOverride?: Array<{ label: string; value: string; disabled?: boolean }>;
+  disabled?: boolean;
 }
 
-function DynamicField({ field, value, onChange, variables }: DynamicFieldProps) {
+function DynamicField({
+  field,
+  value,
+  onChange,
+  variables,
+  optionsOverride,
+  disabled,
+}: DynamicFieldProps) {
   const handleChange = useCallback(
     (v: unknown) => onChange(field.key, v),
     [field.key, onChange],
@@ -105,10 +115,15 @@ function DynamicField({ field, value, onChange, variables }: DynamicFieldProps) 
           label={field.label}
           value={String(value ?? field.defaultValue ?? '')}
           onChange={handleChange as (v: string) => void}
-          options={(field.options ?? []).map((o) => ({ label: o.label, value: o.value }))}
+          options={(optionsOverride ?? field.options ?? []).map((o) => ({
+            label: o.label,
+            value: o.value,
+            disabled: o.disabled,
+          }))}
           placeholder={`Select ${field.label.toLowerCase()}...`}
           hint={field.description}
           required={field.required}
+          disabled={disabled}
         />
       );
 
@@ -214,6 +229,93 @@ export function NodeConfigPanel() {
     return getNodeSchema(node.data.nodeType as NodeType);
   }, [node]);
 
+  const isGithubNode = node?.data.nodeType.startsWith('github.') ?? false;
+  const [credentialOptionsRaw, setCredentialOptionsRaw] = useState<
+    Array<{ id: string; label: string; is_default: boolean }>
+  >([]);
+  const [credentialsLoading, setCredentialsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isGithubNode) {
+      setCredentialOptionsRaw([]);
+      setCredentialsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCredentialsLoading(true);
+    listGitHubCredentials()
+      .then((credentials) => {
+        if (cancelled) return;
+        setCredentialOptionsRaw(
+          credentials.map((credential) => ({
+            id: credential.id,
+            label: credential.label,
+            is_default: credential.is_default,
+          })),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setCredentialOptionsRaw([]);
+      })
+      .finally(() => {
+        if (!cancelled) setCredentialsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isGithubNode]);
+
+  const credentialOptions = useMemo(() => {
+    if (credentialsLoading) {
+      return [
+        {
+          label: 'Loading credentials...',
+          value: '',
+          disabled: true,
+        },
+      ];
+    }
+
+    if (credentialOptionsRaw.length === 0) {
+      return [
+        {
+          label: 'No saved credentials in Settings',
+          value: '',
+          disabled: true,
+        },
+      ];
+    }
+
+    return credentialOptionsRaw.map((credential) => ({
+      label: credential.is_default
+        ? `${credential.label} (Default)`
+        : credential.label,
+      value: credential.id,
+      disabled: false,
+    }));
+  }, [credentialOptionsRaw, credentialsLoading]);
+
+  useEffect(() => {
+    if (!node || !isGithubNode) return;
+    if (!schema?.fields.some((field) => field.key === 'credential_id')) return;
+    if (credentialsLoading) return;
+    if (credentialOptionsRaw.length === 0) return;
+
+    const currentConfig = (node.data.config ?? {}) as Record<string, unknown>;
+    const currentValue = currentConfig.credential_id;
+    if (typeof currentValue === 'string' && currentValue.trim() !== '') return;
+
+    const defaultCredential =
+      credentialOptionsRaw.find((credential) => credential.is_default) ??
+      credentialOptionsRaw[0];
+    updateNodeConfig(node.id, {
+      ...currentConfig,
+      credential_id: defaultCredential.id,
+    });
+  }, [credentialOptionsRaw, credentialsLoading, isGithubNode, node, schema, updateNodeConfig]);
+
   const handleFieldChange = useCallback(
     (key: string, value: unknown) => {
       if (!node) return;
@@ -289,6 +391,8 @@ export function NodeConfigPanel() {
                 value={config[field.key]}
                 onChange={handleFieldChange}
                 variables={variables}
+                optionsOverride={field.key === 'credential_id' ? credentialOptions : undefined}
+                disabled={field.key === 'credential_id' && credentialsLoading}
               />
             ))}
           </>

@@ -124,6 +124,16 @@ export function installWebDriverTauriMock() {
       return { success: true, username: 'e2e-user' };
     }
 
+    if (cmd === 'list_github_credentials') {
+      if (!state.auth?.authenticated) return [];
+      return [{
+        id: 'e2e-user',
+        username: 'e2e-user',
+        label: 'e2e-user',
+        is_default: true,
+      }];
+    }
+
     if (cmd === 'execute_workflow') {
       const workflowId = (args.workflowId as string | undefined) ?? 'wf-created';
       const execution = {

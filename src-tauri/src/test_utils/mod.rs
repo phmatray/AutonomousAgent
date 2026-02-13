@@ -359,6 +359,7 @@ pub fn create_test_context_with_config(
 pub fn create_test_service_provider() -> ServiceProvider {
     ServiceProvider {
         github: Arc::new(crate::services::GitHubClient::new()),
+        storage: Arc::new(crate::services::StorageService::new()),
         claude: Arc::new(ClaudeProvider::new()),
         git: Arc::new(crate::services::GitService::new()),
     }
@@ -370,6 +371,7 @@ pub fn create_test_service_provider_with_mock_claude(
 ) -> ServiceProvider {
     ServiceProvider {
         github: Arc::new(crate::services::GitHubClient::new()),
+        storage: Arc::new(crate::services::StorageService::new()),
         claude: mock_claude,
         git: Arc::new(crate::services::GitService::new()),
     }

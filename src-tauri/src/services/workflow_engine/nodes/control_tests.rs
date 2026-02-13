@@ -6,7 +6,7 @@ mod tests {
     use crate::services::workflow_engine::nodes::control::{
         ConditionNode, DelayNode, LoopNode, TriggerNode,
     };
-    use crate::services::{GitHubClient, GitService};
+    use crate::services::{GitHubClient, GitService, StorageService};
     use serde_json::{json, Value};
     use std::sync::Arc;
 
@@ -14,6 +14,7 @@ mod tests {
     fn test_services() -> ServiceProvider {
         ServiceProvider {
             github: Arc::new(GitHubClient::new()),
+            storage: Arc::new(StorageService::new()),
             claude: Arc::new(ClaudeProvider::new())
                 as Arc<dyn crate::services::workflow_engine::node_registry::ClaudeRunner>,
             git: Arc::new(GitService::new()),

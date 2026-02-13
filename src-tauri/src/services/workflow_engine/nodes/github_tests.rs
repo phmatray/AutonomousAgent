@@ -7,7 +7,7 @@ mod tests {
     use crate::services::workflow_engine::nodes::github::{
         GithubCreatePrNode, GithubReadIssuesNode, GithubSyncNode,
     };
-    use crate::services::{GitHubClient, GitService};
+    use crate::services::{GitHubClient, GitService, StorageService};
     use serde_json::json;
     use std::sync::Arc;
 
@@ -17,6 +17,7 @@ mod tests {
     fn test_services() -> ServiceProvider {
         ServiceProvider {
             github: Arc::new(GitHubClient::new()),
+            storage: Arc::new(StorageService::new()),
             claude: Arc::new(ClaudeProvider::new()),
             git: Arc::new(GitService::new()),
         }

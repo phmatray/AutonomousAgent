@@ -5,6 +5,7 @@ export type FieldType = 'text' | 'textarea' | 'number' | 'select' | 'template';
 export interface FieldOption {
   label: string;
   value: string;
+  disabled?: boolean;
 }
 
 export interface FieldSchema {
@@ -145,6 +146,13 @@ const delaySchema: NodeConfigSchema = {
 const githubSyncSchema: NodeConfigSchema = {
   fields: [
     {
+      key: 'credential_id',
+      label: 'Credentials',
+      type: 'select',
+      required: false,
+      description: 'GitHub account credentials to use for this node',
+    },
+    {
       key: 'owner',
       label: 'Owner',
       type: 'text',
@@ -179,6 +187,13 @@ const githubSyncSchema: NodeConfigSchema = {
 const githubReadIssuesSchema: NodeConfigSchema = {
   fields: [
     {
+      key: 'credential_id',
+      label: 'Credentials',
+      type: 'select',
+      required: false,
+      description: 'GitHub account credentials to use for this node',
+    },
+    {
       key: 'owner',
       label: 'Owner',
       type: 'template',
@@ -203,6 +218,13 @@ const githubReadIssuesSchema: NodeConfigSchema = {
 
 const githubCreatePrSchema: NodeConfigSchema = {
   fields: [
+    {
+      key: 'credential_id',
+      label: 'Credentials',
+      type: 'select',
+      required: false,
+      description: 'GitHub account credentials to use for this node',
+    },
     {
       key: 'owner',
       label: 'Owner',

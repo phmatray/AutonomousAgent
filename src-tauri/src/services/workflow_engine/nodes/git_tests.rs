@@ -41,6 +41,7 @@ mod tests {
     fn create_service_provider() -> ServiceProvider {
         ServiceProvider {
             github: Arc::new(crate::services::GitHubClient::new()),
+            storage: Arc::new(crate::services::StorageService::new()),
             claude: Arc::new(ClaudeProvider::new())
                 as Arc<dyn crate::services::workflow_engine::node_registry::ClaudeRunner>,
             git: Arc::new(GitService::new()),

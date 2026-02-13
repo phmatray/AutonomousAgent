@@ -3,6 +3,8 @@ use crate::services::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+pub const ACTIVE_SESSION_CREDENTIAL_ID: &str = "__active_session__";
+
 pub(crate) async fn ensure_github_authenticated(state: &AppState) -> Result<()> {
     if state.github.get_authenticated_user().await.is_ok() {
         return Ok(());
@@ -18,6 +20,14 @@ pub struct AuthResult {
     pub success: bool,
     pub username: Option<String>,
     pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitHubCredentialResponse {
+    pub id: String,
+    pub username: String,
+    pub label: String,
+    pub is_default: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -43,22 +53,62 @@ pub struct Issue {
 
 #[tauri::command]
 pub async fn authenticate_github(token: String, state: State<'_, AppState>) -> Result<AuthResult> {
-    // Store token securely
-    state.storage.set_github_token(&token)?;
-
-    // Authenticate with GitHub
     match state.github.authenticate(&token).await {
-        Ok(user) => Ok(AuthResult {
-            success: true,
-            username: Some(user.login),
-            avatar_url: Some(user.avatar_url),
-        }),
-        Err(e) => {
-            // Remove token if auth failed
-            let _ = state.storage.delete_github_token();
-            Err(e)
+        Ok(user) => {
+            // Persist as reusable credential profile and keep legacy token for compatibility.
+            state.storage.save_github_credential(&user.login, &token)?;
+            let _ = state.storage.set_github_token(&token);
+
+            Ok(AuthResult {
+                success: true,
+                username: Some(user.login),
+                avatar_url: Some(user.avatar_url),
+            })
+        }
+        Err(e) => Err(e),
+    }
+}
+
+#[tauri::command]
+pub async fn list_github_credentials(
+    state: State<'_, AppState>,
+) -> Result<Vec<GitHubCredentialResponse>> {
+    let mut credentials = state.storage.list_github_credentials()?;
+
+    // Backfill credentials for users authenticated before multi-credential support.
+    if credentials.is_empty() && ensure_github_authenticated(&state).await.is_ok() {
+        if let Ok(user) = state.github.get_authenticated_user().await {
+            if let Ok(token) = state.storage.get_github_token() {
+                let _ = state.storage.save_github_credential(&user.login, &token);
+                credentials = state.storage.list_github_credentials()?;
+            }
         }
     }
+
+    let mut response: Vec<GitHubCredentialResponse> = credentials
+        .into_iter()
+        .map(|credential| GitHubCredentialResponse {
+            id: credential.id,
+            username: credential.username,
+            label: credential.label,
+            is_default: credential.is_default,
+        })
+        .collect();
+
+    // If secure storage is unavailable, still expose the currently authenticated session
+    // so users can select it in GitHub nodes.
+    if response.is_empty() {
+        if let Ok(user) = state.github.get_authenticated_user().await {
+            response.push(GitHubCredentialResponse {
+                id: ACTIVE_SESSION_CREDENTIAL_ID.to_string(),
+                username: user.login.clone(),
+                label: format!("{} (Current session)", user.login),
+                is_default: true,
+            });
+        }
+    }
+
+    Ok(response)
 }
 
 #[tauri::command]
