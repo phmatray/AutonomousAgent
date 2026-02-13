@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMachine } from '@xstate/react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { WorkflowExecution, ExecutionLog, ExecutionStatus } from '@/types/workflow';
+import { exportDebugBundle } from '@/lib/api/workflow';
 import { useRouter } from '@/lib/router';
 import { monitoringMachine } from './monitoring-machine';
 
@@ -150,6 +151,27 @@ export function MonitoringPage() {
   const isStreaming = selectedExecution?.status === 'RUNNING';
 
   const handleCancel = () => send({ type: 'CANCEL_SELECTED' });
+  const [exportState, setExportState] = useState<{
+    isExporting: boolean;
+    path: string | null;
+    error: string | null;
+  }>({
+    isExporting: false,
+    path: null,
+    error: null,
+  });
+
+  const handleExportDebugBundle = async () => {
+    if (!selectedExecutionId || exportState.isExporting) return;
+    setExportState({ isExporting: true, path: null, error: null });
+    try {
+      const result = await exportDebugBundle(selectedExecutionId);
+      setExportState({ isExporting: false, path: result.path, error: null });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to export debug bundle';
+      setExportState({ isExporting: false, path: null, error: message });
+    }
+  };
 
   return (
     <div className="flex h-full">
@@ -215,17 +237,42 @@ export function MonitoringPage() {
                   </span>
                 )}
               </div>
-              {isStreaming && (
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleCancel}
-                  className="px-3 py-1.5 text-sm bg-red-700 text-white rounded hover:bg-red-600 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
-                  aria-label="Cancel execution"
+                  onClick={handleExportDebugBundle}
+                  disabled={exportState.isExporting}
+                  className="px-3 py-1.5 text-sm bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="Export debug bundle"
                 >
-                  Cancel
+                  {exportState.isExporting ? 'Exporting...' : 'Export Debug Bundle'}
                 </button>
-              )}
+                {isStreaming && (
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    className="px-3 py-1.5 text-sm bg-red-700 text-white rounded hover:bg-red-600 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
+                    aria-label="Cancel execution"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
             </header>
+            {(exportState.path || exportState.error) && (
+              <div className="px-4 py-2 border-b border-gray-800 bg-gray-900/80 text-xs">
+                {exportState.path && (
+                  <p className="text-green-400">
+                    Debug bundle exported to: <span className="font-mono">{exportState.path}</span>
+                  </p>
+                )}
+                {exportState.error && (
+                  <p className="text-red-400" role="alert">
+                    {exportState.error}
+                  </p>
+                )}
+              </div>
+            )}
             <LogViewer logs={allLogs} isStreaming={isStreaming} />
           </>
         ) : (

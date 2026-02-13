@@ -48,6 +48,7 @@ export const workflowCatalogMachine = setup({
           actions: assign({
             workflows: ({ event }) => event.output,
             loadError: null,
+            actionError: null,
           }),
         },
         onError: {

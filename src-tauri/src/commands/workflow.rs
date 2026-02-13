@@ -4,7 +4,7 @@ use crate::services::workflow_engine::executor::WorkflowExecutionResult;
 use crate::services::AppState;
 use chrono;
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use uuid;
 
 #[tauri::command]
@@ -87,4 +87,65 @@ pub async fn get_execution_logs(
     state: State<'_, AppState>,
 ) -> Result<Vec<ExecutionLogEntry>> {
     state.engine.get_execution_logs(&execution_id).await
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugBundle {
+    pub exported_at: String,
+    pub app_version: String,
+    pub platform: String,
+    pub execution: WorkflowExecution,
+    pub workflow: Option<Workflow>,
+    pub logs: Vec<ExecutionLogEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportDebugBundleResponse {
+    pub path: String,
+}
+
+#[tauri::command]
+pub async fn export_debug_bundle(
+    execution_id: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<ExportDebugBundleResponse> {
+    let execution = state
+        .engine
+        .list_executions(None)
+        .await?
+        .into_iter()
+        .find(|exec| exec.id == execution_id)
+        .ok_or_else(|| {
+            crate::errors::AppError::Validation(format!("Execution {} not found", execution_id))
+        })?;
+
+    let workflow = state.engine.get_workflow(&execution.workflow_id).await?;
+    let logs = state.engine.get_execution_logs(&execution.id).await?;
+
+    let bundle = DebugBundle {
+        exported_at: chrono::Utc::now().to_rfc3339(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        platform: std::env::consts::OS.to_string(),
+        execution,
+        workflow,
+        logs,
+    };
+
+    let app_dir = app.path().app_data_dir()?;
+    let bundles_dir = app_dir.join("debug-bundles");
+    std::fs::create_dir_all(&bundles_dir)?;
+    let filename = format!(
+        "debug-bundle-{}-{}.json",
+        bundle.execution.id,
+        chrono::Utc::now().format("%Y%m%dT%H%M%SZ")
+    );
+    let path = bundles_dir.join(filename);
+    std::fs::write(&path, serde_json::to_string_pretty(&bundle)?)?;
+
+    Ok(ExportDebugBundleResponse {
+        path: path.display().to_string(),
+    })
 }

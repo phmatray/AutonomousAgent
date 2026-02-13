@@ -1,7 +1,7 @@
 import { useRouter } from '@/lib/router';
 import { Trash2 } from 'lucide-react';
 import type { Workflow } from '@/types/workflow';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useWorkflowCatalogActorRef, WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
 
@@ -90,6 +90,10 @@ export function DashboardPage() {
   const pendingDeleteId = WorkflowCatalogContext.useSelector((state) => state.context.pendingDeleteId);
   const isLoading = WorkflowCatalogContext.useSelector((state) => state.matches('loading'));
   const isDeleting = WorkflowCatalogContext.useSelector((state) => state.matches('deleting'));
+
+  useEffect(() => {
+    actorRef.send({ type: 'REFRESH' });
+  }, [actorRef]);
 
   const navigateToEditor = (workflowId?: string) => {
     if (workflowId) {

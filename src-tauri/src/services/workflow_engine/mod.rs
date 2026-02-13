@@ -9,11 +9,21 @@ use crate::models::workflow::{Workflow, WorkflowExecution};
 use executor::{RetryPolicy, WorkflowExecutionResult};
 use node_registry::{build_default_registry, ClaudeProvider, NodeRegistry, ServiceProvider};
 use scheduler::Scheduler;
+use serde_json::json;
 use state_machine::WorkflowState;
 
 use sqlx::sqlite::SqlitePool;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+struct ExecutionLogInsert<'a> {
+    execution_id: &'a str,
+    node_id: Option<&'a str>,
+    level: &'a str,
+    message: &'a str,
+    metadata: Option<serde_json::Value>,
+    timestamp: &'a str,
+}
 
 /// The top-level workflow engine that orchestrates everything.
 pub struct WorkflowEngine {
@@ -154,10 +164,41 @@ impl WorkflowEngine {
 
     pub async fn delete_workflow(&self, id: &str) -> Result<()> {
         let pool = self.get_pool().await?;
+        let mut tx = pool.begin().await?;
+
+        // Keep deletes robust across existing DBs even if FK cascade behavior differs.
+        sqlx::query(
+            "DELETE FROM execution_logs WHERE execution_id IN (SELECT id FROM executions WHERE workflow_id = ?)",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            "DELETE FROM node_executions WHERE execution_id IN (SELECT id FROM executions WHERE workflow_id = ?)",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query("DELETE FROM executions WHERE workflow_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query(
+            "UPDATE backlog_items SET linked_workflow_id = NULL WHERE linked_workflow_id = ?",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
         sqlx::query("DELETE FROM workflows WHERE id = ?")
             .bind(id)
-            .execute(&pool)
+            .execute(&mut *tx)
             .await?;
+
+        tx.commit().await?;
         Ok(())
     }
 
@@ -222,6 +263,19 @@ impl WorkflowEngine {
         .execute(&pool)
         .await?;
 
+        self.append_execution_log(
+            &pool,
+            ExecutionLogInsert {
+                execution_id,
+                node_id: None,
+                level: "INFO",
+                message: &format!("Workflow execution started (trigger: {})", trigger_type),
+                metadata: Some(json!({ "workflow_id": workflow_id, "trigger_type": trigger_type })),
+                timestamp: &now,
+            },
+        )
+        .await?;
+
         Ok(())
     }
 
@@ -239,6 +293,32 @@ impl WorkflowEngine {
         .bind(&context_json)
         .bind(&result.execution_id)
         .execute(&pool)
+        .await?;
+
+        let completion_level = if result.status == WorkflowState::Failed.as_str() {
+            "ERROR"
+        } else {
+            "INFO"
+        };
+        let completion_message = match &result.error {
+            Some(error) => format!("Workflow execution {}: {}", result.status, error),
+            None => format!("Workflow execution {}", result.status),
+        };
+        self.append_execution_log(
+            &pool,
+            ExecutionLogInsert {
+                execution_id: &result.execution_id,
+                node_id: None,
+                level: completion_level,
+                message: &completion_message,
+                metadata: Some(json!({
+                    "workflow_id": result.workflow_id,
+                    "status": result.status,
+                    "node_count": result.node_results.len(),
+                })),
+                timestamp: &result.completed_at,
+            },
+        )
         .await?;
 
         // Also record individual node executions
@@ -264,7 +344,61 @@ impl WorkflowEngine {
             .bind(node_result.retry_count as i32)
             .execute(&pool)
             .await?;
+
+            let level = match node_result.status.as_str() {
+                "FAILED" => "ERROR",
+                "SKIPPED" => "WARN",
+                _ => "INFO",
+            };
+            let message = match &node_result.error {
+                Some(error) => format!(
+                    "Node {} {} (retries: {}): {}",
+                    node_result.node_id, node_result.status, node_result.retry_count, error
+                ),
+                None => format!(
+                    "Node {} {} (retries: {})",
+                    node_result.node_id, node_result.status, node_result.retry_count
+                ),
+            };
+            self.append_execution_log(
+                &pool,
+                ExecutionLogInsert {
+                    execution_id: &result.execution_id,
+                    node_id: Some(&node_result.node_id),
+                    level,
+                    message: &message,
+                    metadata: node_result.output.clone(),
+                    timestamp: &node_result.completed_at,
+                },
+            )
+            .await?;
         }
+
+        Ok(())
+    }
+
+    async fn append_execution_log(
+        &self,
+        pool: &SqlitePool,
+        entry: ExecutionLogInsert<'_>,
+    ) -> Result<()> {
+        let metadata_json = entry
+            .metadata
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
+
+        sqlx::query(
+            "INSERT INTO execution_logs (execution_id, node_id, level, message, metadata, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(entry.execution_id)
+        .bind(entry.node_id)
+        .bind(entry.level)
+        .bind(entry.message)
+        .bind(&metadata_json)
+        .bind(entry.timestamp)
+        .execute(pool)
+        .await?;
 
         Ok(())
     }

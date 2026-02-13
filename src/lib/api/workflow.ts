@@ -52,3 +52,7 @@ export async function getExecutionLogs(
 export async function cancelExecution(executionId: string): Promise<void> {
   return invoke('cancel_execution', { executionId });
 }
+
+export async function exportDebugBundle(executionId: string): Promise<{ path: string }> {
+  return invoke('export_debug_bundle', { executionId });
+}
