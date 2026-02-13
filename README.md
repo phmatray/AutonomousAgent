@@ -153,6 +153,12 @@ Check TypeScript compilation:
 npx tsc --noEmit
 ```
 
+Run frontend end-to-end tests:
+
+```bash
+npm run test:e2e
+```
+
 ## Configuration
 
 ### GitHub Authentication

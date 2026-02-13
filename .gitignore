@@ -29,6 +29,8 @@ src-tauri/target
 # Coverage reports
 coverage/
 src-tauri/tarpaulin-report.*
+playwright-report/
+test-results/
 
 # Environment
 .env
