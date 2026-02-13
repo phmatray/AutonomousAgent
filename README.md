@@ -214,6 +214,8 @@ The frontend communicates with the backend via Tauri's invoke system. All 23 reg
 
 13 node types organized into 4 categories:
 
+Detailed standardized node documentation is available in [docs/nodes/README.md](docs/nodes/README.md).
+
 **GitHub Nodes:**
 - `github.sync` - Clone or pull a repository
 - `github.readIssues` - Fetch open issues from a repository
@@ -231,7 +233,7 @@ The frontend communicates with the backend via Tauri's invoke system. All 23 reg
 
 **Control Flow:**
 - `trigger` - Start a workflow (manual or scheduled)
-- `condition` - Branch execution based on a condition (supports `gt`, `lt`, `eq`, `ne`, `contains`)
+- `condition` - Branch execution based on a condition (supports `exists`, `not_empty`, `eq`, `neq`, `gt`, `lt`, `gte`, `lte`)
 - `loop` - Iterate over an array, executing downstream nodes for each item
 - `delay` - Wait for a specified duration
 
