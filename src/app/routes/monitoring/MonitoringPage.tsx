@@ -134,6 +134,14 @@ export function MonitoringPage() {
   });
 
   useEffect(() => {
+    if (!selectedExecutionId || !executions) return;
+    const stillExists = executions.some((execution) => execution.id === selectedExecutionId);
+    if (!stillExists) {
+      setSelectedExecutionId(null);
+    }
+  }, [executions, selectedExecutionId]);
+
+  useEffect(() => {
     let unlisten: UnlistenFn | undefined;
     if (selectedExecutionId) {
       listen<ExecutionLog>(`execution-log-${selectedExecutionId}`, (event) => {

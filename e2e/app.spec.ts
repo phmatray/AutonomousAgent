@@ -255,3 +255,35 @@ test('shows monitoring error when executions cannot be loaded', async ({ page })
   await page.goto('/#/monitoring');
   await expect(page.getByRole('alert')).toContainText('Could not load executions');
 });
+
+test('clears selected execution when it disappears from refreshed list', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => {
+    const state = (window as Window & {
+      __E2E_STATE__?: {
+        executions: Array<{ id: string; workflowId: string; status: string; startedAt?: string }>;
+      };
+    }).__E2E_STATE__;
+    if (!state) return;
+    state.executions = [{
+      id: 'exec-12345678',
+      workflowId: 'wf-123',
+      status: 'RUNNING',
+      startedAt: new Date('2026-02-13T12:00:00Z').toISOString(),
+    }];
+  });
+
+  await page.goto('/#/monitoring');
+  await page.getByRole('button', { name: /status: RUNNING/ }).click();
+  await expect(page.getByText('Execution: exec-1234567')).toBeVisible();
+
+  await page.evaluate(() => {
+    const state = (window as Window & {
+      __E2E_STATE__?: { executions: unknown[] };
+    }).__E2E_STATE__;
+    if (state) state.executions = [];
+  });
+
+  await page.waitForTimeout(3500);
+  await expect(page.getByText(/^Select an execution to view logs$/)).toBeVisible();
+});
