@@ -23,11 +23,11 @@ export function SettingsPage() {
   });
 
   useEffect(() => {
-    if (saveTokenMutation.isSuccess) {
+    if (saveTokenMutation.isSuccess || saveTokenMutation.isError) {
       const timer = setTimeout(() => saveTokenMutation.reset(), 3000);
       return () => clearTimeout(timer);
     }
-  }, [saveTokenMutation.isSuccess, saveTokenMutation]);
+  }, [saveTokenMutation.isSuccess, saveTokenMutation.isError, saveTokenMutation]);
 
   return (
     <div className="flex-1 overflow-y-auto p-6">

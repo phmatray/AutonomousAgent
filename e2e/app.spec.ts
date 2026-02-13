@@ -209,3 +209,28 @@ test('rehides token input after successful authentication save', async ({ page }
   await expect(page.getByText('Connected as e2e-user')).toBeVisible();
   await expect(tokenInput).toHaveAttribute('type', 'password');
 });
+
+test('auto clears token save error message after timeout', async ({ page }) => {
+  await page.goto('/#/settings');
+
+  await page.evaluate(() => {
+    const tauri = (window as Window & {
+      __TAURI_INTERNALS__?: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+    }).__TAURI_INTERNALS__;
+    if (!tauri) return;
+    const originalInvoke = tauri.invoke.bind(tauri);
+    tauri.invoke = async (cmd, args = {}) => {
+      if (cmd === 'authenticate_github' && args.token === 'ghp_bad_token') {
+        throw new Error('Invalid token');
+      }
+      return originalInvoke(cmd, args);
+    };
+  });
+
+  await page.getByLabel('Personal Access Token').fill('ghp_bad_token');
+  await page.getByRole('button', { name: 'Save Token' }).click();
+  await expect(page.getByText('Failed to save token')).toBeVisible();
+
+  await page.waitForTimeout(3500);
+  await expect(page.getByText('Failed to save token')).toBeHidden();
+});
