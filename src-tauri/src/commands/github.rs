@@ -31,6 +31,32 @@ pub struct GitHubCredentialResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct CredentialAuditEventResponse {
+    pub id: String,
+    pub provider: String,
+    pub action: String,
+    pub success: bool,
+    pub detail: Option<String>,
+    pub timestamp: String,
+}
+
+async fn append_audit_event(
+    state: &AppState,
+    provider: &str,
+    action: &str,
+    success: bool,
+    detail: Option<String>,
+) {
+    if let Err(err) = state
+        .storage
+        .append_credential_audit_event(provider, action, success, detail.as_deref())
+        .await
+    {
+        eprintln!("Failed to append credential audit event: {}", err);
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Repository {
     pub id: i64,
     pub name: String,
@@ -68,6 +94,14 @@ pub async fn authenticate_github(token: String, state: State<'_, AppState>) -> R
                 .save_github_credential(&user.login, &token)
                 .await?;
             let _ = state.storage.set_github_token(&token).await;
+            append_audit_event(
+                &state,
+                "github",
+                "save_token",
+                true,
+                Some("GitHub token authenticated and persisted.".to_string()),
+            )
+            .await;
 
             Ok(AuthResult {
                 success: true,
@@ -75,7 +109,10 @@ pub async fn authenticate_github(token: String, state: State<'_, AppState>) -> R
                 avatar_url: Some(user.avatar_url),
             })
         }
-        Err(e) => Err(e),
+        Err(e) => {
+            append_audit_event(&state, "github", "save_token", false, Some(e.to_string())).await;
+            Err(e)
+        }
     }
 }
 
@@ -228,5 +265,74 @@ pub async fn get_saved_github_token(state: State<'_, AppState>) -> Result<serde_
 pub async fn delete_github_token(state: State<'_, AppState>) -> Result<()> {
     state.storage.delete_all_github_credentials().await?;
     state.github.clear_authentication().await;
+    append_audit_event(
+        &state,
+        "github",
+        "delete_token",
+        true,
+        Some("Removed all saved GitHub credential entries.".to_string()),
+    )
+    .await;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn verify_github_token(
+    token: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value> {
+    let token = token.trim().to_string();
+    if token.is_empty() {
+        return Err(crate::errors::AppError::Validation(
+            "GitHub token cannot be empty".to_string(),
+        ));
+    }
+
+    match state.github.authenticate(&token).await {
+        Ok(user) => {
+            append_audit_event(
+                &state,
+                "github",
+                "verify_reveal",
+                true,
+                Some("Verified token for reveal.".to_string()),
+            )
+            .await;
+            Ok(serde_json::json!({
+                "valid": true,
+                "username": user.login
+            }))
+        }
+        Err(error) => {
+            append_audit_event(
+                &state,
+                "github",
+                "verify_reveal",
+                false,
+                Some(error.to_string()),
+            )
+            .await;
+            Err(error)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn list_credential_audit_events(
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<CredentialAuditEventResponse>> {
+    let events = state.storage.list_credential_audit_events(limit).await?;
+
+    Ok(events
+        .into_iter()
+        .map(|event| CredentialAuditEventResponse {
+            id: event.id,
+            provider: event.provider,
+            action: event.action,
+            success: event.success,
+            detail: event.detail,
+            timestamp: event.timestamp,
+        })
+        .collect())
 }

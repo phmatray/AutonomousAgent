@@ -216,7 +216,7 @@ For a detailed architecture overview, see [docs/ARCHITECTURE.md](docs/ARCHITECTU
 
 ### Tauri IPC Commands
 
-The frontend communicates with the backend via Tauri's invoke system. The app currently exposes 40 registered commands:
+The frontend communicates with the backend via Tauri's invoke system. The app currently exposes 42 registered commands:
 
 | Category | Command | Description |
 |----------|---------|-------------|
@@ -239,6 +239,8 @@ The frontend communicates with the backend via Tauri's invoke system. The app cu
 | | `get_auth_status` | Check authentication status |
 | | `get_saved_github_token` | Read saved token for credentials UI restore |
 | | `delete_github_token` | Remove all saved GitHub credentials |
+| | `verify_github_token` | Validate token before revealing restored secrets |
+| | `list_credential_audit_events` | List local credential audit events |
 | **Claude** | `execute_plan` | Run Claude CLI prompt |
 | | `cancel_execution` | Cancel running execution |
 | | `list_running_executions` | List active executions |
@@ -314,6 +316,7 @@ SQLite database with 5 tables:
 - GitHub tokens stored securely in OS keyring (macOS Keychain, Windows Credential Manager)
 - Automatic session restoration from keyring on startup
 - Token retrieval to the frontend is limited to the Credentials page restore flow
+- Local credential audit stream stores metadata only (no secret values)
 - Input validation on all Tauri commands
 - Claude CLI runs in subprocess with configurable timeout
 

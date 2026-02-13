@@ -8,6 +8,8 @@ import {
   deleteGitHubToken,
   getAuthStatus,
   getSavedGitHubToken,
+  listCredentialAuditEvents,
+  verifyGitHubToken,
 } from '@/lib/api/github';
 import type { AuthResult, GitHubRepo, GitHubIssue, GitHubPR } from '@/lib/api/github';
 
@@ -238,6 +240,61 @@ describe('github API', () => {
       mockInvoke.mockRejectedValueOnce(new Error('Delete failed'));
 
       await expect(deleteGitHubToken()).rejects.toThrow('Delete failed');
+    });
+  });
+
+  describe('verifyGitHubToken', () => {
+    it('calls invoke with token and returns validation result', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        valid: true,
+        username: 'testuser',
+      });
+
+      const result = await verifyGitHubToken('ghp_token123');
+
+      expect(mockInvoke).toHaveBeenCalledWith('verify_github_token', {
+        token: 'ghp_token123',
+      });
+      expect(result.valid).toBe(true);
+      expect(result.username).toBe('testuser');
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('Invalid token'));
+
+      await expect(verifyGitHubToken('bad')).rejects.toThrow('Invalid token');
+    });
+  });
+
+  describe('listCredentialAuditEvents', () => {
+    it('calls invoke with default limit', async () => {
+      mockInvoke.mockResolvedValueOnce([]);
+
+      const result = await listCredentialAuditEvents();
+
+      expect(mockInvoke).toHaveBeenCalledWith('list_credential_audit_events', {
+        limit: 20,
+      });
+      expect(result).toEqual([]);
+    });
+
+    it('calls invoke with custom limit', async () => {
+      mockInvoke.mockResolvedValueOnce([
+        {
+          id: '1',
+          provider: 'github',
+          action: 'save_token',
+          success: true,
+          timestamp: '2026-02-13T00:00:00Z',
+        },
+      ]);
+
+      const result = await listCredentialAuditEvents(5);
+
+      expect(mockInvoke).toHaveBeenCalledWith('list_credential_audit_events', {
+        limit: 5,
+      });
+      expect(result).toHaveLength(1);
     });
   });
 });

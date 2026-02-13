@@ -45,6 +45,12 @@ function mockCredentialCommands(options?: {
     if (cmd === 'delete_github_token') {
       return Promise.resolve(null);
     }
+    if (cmd === 'verify_github_token') {
+      return Promise.resolve({ valid: true, username: 'test-user' });
+    }
+    if (cmd === 'list_credential_audit_events') {
+      return Promise.resolve([]);
+    }
     if (cmd === 'save_claude_credential') {
       return Promise.resolve({ configured: true, account_label: null });
     }
@@ -121,5 +127,47 @@ describe('CredentialsPage', () => {
       expect(screen.getByLabelText('Personal Access Token')).toHaveValue('ghp_savedtoken123');
     });
     expect(window.localStorage.getItem(GITHUB_TOKEN_AUTOFILL_STORAGE_KEY)).toBe('true');
+  });
+
+  it('verifies restored token before reveal', async () => {
+    const user = userEvent.setup();
+    mockCredentialCommands({ savedToken: 'ghp_savedtoken123' });
+
+    render(<CredentialsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Personal Access Token')).toHaveValue('ghp_savedtoken123');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Verify and show token' }));
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('verify_github_token', {
+        token: 'ghp_savedtoken123',
+      });
+    });
+
+    expect(screen.getByLabelText('Personal Access Token')).toHaveAttribute('type', 'text');
+  });
+
+  it('confirms before deleting saved token', async () => {
+    const user = userEvent.setup();
+    mockCredentialCommands({ savedToken: 'ghp_savedtoken123' });
+
+    render(<CredentialsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Remove Saved Token' })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Remove Saved Token' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('Remove Saved GitHub Token')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Remove Token' }));
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('delete_github_token');
+    });
   });
 });

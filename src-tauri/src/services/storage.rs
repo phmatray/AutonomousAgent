@@ -19,6 +19,8 @@ const DB_KEY_GITHUB_CREDENTIAL_INDEX: &str = "credentials.github.index";
 const DB_KEY_GITHUB_LEGACY_TOKEN: &str = "credentials.github.legacy_token";
 const DB_KEY_CLAUDE_API_KEY: &str = "credentials.claude.api_key";
 const DB_KEY_CLAUDE_ACCOUNT_LABEL: &str = "credentials.claude.account_label";
+const DB_KEY_CREDENTIAL_AUDIT_EVENTS: &str = "credentials.audit.events";
+const MAX_CREDENTIAL_AUDIT_EVENTS: usize = 200;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitHubCredential {
@@ -32,6 +34,16 @@ pub struct GitHubCredential {
 pub struct ClaudeCredentialStatus {
     pub configured: bool,
     pub account_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CredentialAuditEvent {
+    pub id: String,
+    pub provider: String,
+    pub action: String,
+    pub success: bool,
+    pub detail: Option<String>,
+    pub timestamp: String,
 }
 
 #[derive(Debug, Clone)]
@@ -230,6 +242,23 @@ impl StorageService {
     async fn save_credential_index(&self, credentials: &[GitHubCredential]) -> Result<()> {
         let payload = serde_json::to_string(credentials)?;
         self.set_config_entry(DB_KEY_GITHUB_CREDENTIAL_INDEX, &payload, false)
+            .await
+    }
+
+    async fn load_credential_audit_events(&self) -> Result<Vec<CredentialAuditEvent>> {
+        if let Some((raw, _)) = self
+            .get_config_entry(DB_KEY_CREDENTIAL_AUDIT_EVENTS)
+            .await?
+        {
+            serde_json::from_str(&raw).map_err(AppError::from)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    async fn save_credential_audit_events(&self, events: &[CredentialAuditEvent]) -> Result<()> {
+        let payload = serde_json::to_string(events)?;
+        self.set_config_entry(DB_KEY_CREDENTIAL_AUDIT_EVENTS, &payload, false)
             .await
     }
 
@@ -550,25 +579,84 @@ impl StorageService {
         .await?;
 
         // Best-effort cleanup for legacy keyring entries.
-        let legacy_default_entry = keyring::Entry::new(SERVICE_NAME, GITHUB_TOKEN_KEY)?;
-        let _ = legacy_default_entry.delete_credential();
+        if let Ok(legacy_default_entry) = keyring::Entry::new(SERVICE_NAME, GITHUB_TOKEN_KEY) {
+            let _ = legacy_default_entry.delete_credential();
+        }
 
-        let index_entry = keyring::Entry::new(SERVICE_NAME, GITHUB_CREDENTIAL_INDEX_KEY)?;
-        if let Ok(raw_index) = index_entry.get_password() {
-            if let Ok(legacy_credentials) =
-                serde_json::from_str::<Vec<GitHubCredential>>(&raw_index)
-            {
-                for credential in legacy_credentials {
-                    let legacy_key = Self::legacy_token_key_for_credential(&credential.id);
-                    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, &legacy_key) {
-                        let _ = entry.delete_credential();
+        if let Ok(index_entry) = keyring::Entry::new(SERVICE_NAME, GITHUB_CREDENTIAL_INDEX_KEY) {
+            if let Ok(raw_index) = index_entry.get_password() {
+                if let Ok(legacy_credentials) =
+                    serde_json::from_str::<Vec<GitHubCredential>>(&raw_index)
+                {
+                    for credential in legacy_credentials {
+                        let legacy_key = Self::legacy_token_key_for_credential(&credential.id);
+                        if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, &legacy_key) {
+                            let _ = entry.delete_credential();
+                        }
                     }
                 }
             }
+            let _ = index_entry.delete_credential();
         }
-        let _ = index_entry.delete_credential();
 
         Ok(())
+    }
+
+    pub async fn append_credential_audit_event(
+        &self,
+        provider: &str,
+        action: &str,
+        success: bool,
+        detail: Option<&str>,
+    ) -> Result<()> {
+        let provider = provider.trim();
+        if provider.is_empty() {
+            return Err(AppError::Validation(
+                "credential audit provider cannot be empty".to_string(),
+            ));
+        }
+
+        let action = action.trim();
+        if action.is_empty() {
+            return Err(AppError::Validation(
+                "credential audit action cannot be empty".to_string(),
+            ));
+        }
+
+        let mut events = self.load_credential_audit_events().await?;
+        events.push(CredentialAuditEvent {
+            id: uuid::Uuid::new_v4().to_string(),
+            provider: provider.to_string(),
+            action: action.to_string(),
+            success,
+            detail: detail.map(|value| value.trim().to_string()),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        });
+
+        if events.len() > MAX_CREDENTIAL_AUDIT_EVENTS {
+            let overflow = events.len() - MAX_CREDENTIAL_AUDIT_EVENTS;
+            events.drain(0..overflow);
+        }
+
+        self.save_credential_audit_events(&events).await
+    }
+
+    pub async fn list_credential_audit_events(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<Vec<CredentialAuditEvent>> {
+        let mut events = self.load_credential_audit_events().await?;
+        let max = limit.unwrap_or(20).clamp(1, MAX_CREDENTIAL_AUDIT_EVENTS);
+
+        if events.len() <= max {
+            events.reverse();
+            return Ok(events);
+        }
+
+        let split_index = events.len() - max;
+        let mut tail = events.split_off(split_index);
+        tail.reverse();
+        Ok(tail)
     }
 
     pub async fn has_github_token(&self) -> bool {
@@ -646,7 +734,14 @@ impl StorageService {
 
 #[cfg(test)]
 mod tests {
-    use super::{GitHubCredential, StorageService};
+    use super::{
+        GitHubCredential, StorageService, DB_KEY_CREDENTIAL_AUDIT_EVENTS,
+        DB_KEY_GITHUB_CREDENTIAL_INDEX, DB_KEY_GITHUB_LEGACY_TOKEN,
+    };
+    use crate::db::schema::CREATE_CONFIG_TABLE;
+    use sqlx::SqlitePool;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
 
     fn credential(id: &str, is_default: bool) -> GitHubCredential {
         GitHubCredential {
@@ -690,5 +785,117 @@ mod tests {
         assert!(credentials[0].is_default);
         assert!(!credentials[1].is_default);
         assert!(!credentials[2].is_default);
+    }
+
+    async fn setup_storage_service() -> StorageService {
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("sqlite memory pool");
+        sqlx::query(CREATE_CONFIG_TABLE)
+            .execute(&pool)
+            .await
+            .expect("create config table");
+
+        let handle = Arc::new(RwLock::new(Some(pool)));
+        StorageService::with_db_pool_handle(handle)
+    }
+
+    #[tokio::test]
+    async fn delete_all_github_credentials_clears_db_config_entries() {
+        let storage = setup_storage_service().await;
+        let pool = storage.db_pool().await.expect("db pool");
+        let now = chrono::Utc::now().to_rfc3339();
+
+        sqlx::query("INSERT INTO config (key, value, encrypted, updated_at) VALUES (?, ?, ?, ?)")
+            .bind(DB_KEY_GITHUB_CREDENTIAL_INDEX)
+            .bind("[]")
+            .bind(false)
+            .bind(&now)
+            .execute(&pool)
+            .await
+            .expect("insert github index");
+
+        sqlx::query("INSERT INTO config (key, value, encrypted, updated_at) VALUES (?, ?, ?, ?)")
+            .bind(DB_KEY_GITHUB_LEGACY_TOKEN)
+            .bind("legacy-token")
+            .bind(true)
+            .bind(&now)
+            .execute(&pool)
+            .await
+            .expect("insert legacy token");
+
+        sqlx::query("INSERT INTO config (key, value, encrypted, updated_at) VALUES (?, ?, ?, ?)")
+            .bind("credentials.github.token.demo")
+            .bind("scoped-token")
+            .bind(true)
+            .bind(&now)
+            .execute(&pool)
+            .await
+            .expect("insert credential token");
+
+        sqlx::query("INSERT INTO config (key, value, encrypted, updated_at) VALUES (?, ?, ?, ?)")
+            .bind("credentials.claude.api_key")
+            .bind("claude-key")
+            .bind(true)
+            .bind(&now)
+            .execute(&pool)
+            .await
+            .expect("insert unrelated credential");
+
+        storage
+            .delete_all_github_credentials()
+            .await
+            .expect("delete github credentials");
+
+        let remaining: Vec<String> = sqlx::query_scalar("SELECT key FROM config ORDER BY key ASC")
+            .fetch_all(&pool)
+            .await
+            .expect("query remaining keys");
+
+        assert_eq!(remaining, vec!["credentials.claude.api_key".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn credential_audit_events_store_and_return_most_recent_first() {
+        let storage = setup_storage_service().await;
+
+        storage
+            .append_credential_audit_event("github", "save_token", true, Some("saved"))
+            .await
+            .expect("append first event");
+        storage
+            .append_credential_audit_event("github", "verify_reveal", false, Some("failed"))
+            .await
+            .expect("append second event");
+        storage
+            .append_credential_audit_event("claude", "save_credential", true, None)
+            .await
+            .expect("append third event");
+
+        let all = storage
+            .list_credential_audit_events(Some(10))
+            .await
+            .expect("list all events");
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0].provider, "claude");
+        assert_eq!(all[0].action, "save_credential");
+        assert_eq!(all[1].provider, "github");
+        assert_eq!(all[1].action, "verify_reveal");
+        assert_eq!(all[2].action, "save_token");
+
+        let latest_only = storage
+            .list_credential_audit_events(Some(1))
+            .await
+            .expect("list limited events");
+        assert_eq!(latest_only.len(), 1);
+        assert_eq!(latest_only[0].provider, "claude");
+
+        let pool = storage.db_pool().await.expect("db pool");
+        let stored: Option<String> = sqlx::query_scalar("SELECT value FROM config WHERE key = ?")
+            .bind(DB_KEY_CREDENTIAL_AUDIT_EVENTS)
+            .fetch_optional(&pool)
+            .await
+            .expect("query stored audit payload");
+        assert!(stored.is_some());
     }
 }

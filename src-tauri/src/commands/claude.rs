@@ -68,12 +68,45 @@ pub async fn save_claude_credential(
     let status = state
         .storage
         .save_claude_credential(account_label.as_deref(), &api_key)
-        .await?;
+        .await;
 
-    std::env::set_var("ANTHROPIC_API_KEY", api_key.trim());
+    match status {
+        Ok(status) => {
+            if let Err(error) = state
+                .storage
+                .append_credential_audit_event(
+                    "claude",
+                    "save_credential",
+                    true,
+                    Some("Claude credential saved."),
+                )
+                .await
+            {
+                eprintln!("Failed to append credential audit event: {}", error);
+            }
 
-    Ok(ClaudeCredentialStatusResponse {
-        configured: status.configured,
-        account_label: status.account_label,
-    })
+            std::env::set_var("ANTHROPIC_API_KEY", api_key.trim());
+
+            Ok(ClaudeCredentialStatusResponse {
+                configured: status.configured,
+                account_label: status.account_label,
+            })
+        }
+        Err(error) => {
+            let error_message = error.to_string();
+            if let Err(audit_error) = state
+                .storage
+                .append_credential_audit_event(
+                    "claude",
+                    "save_credential",
+                    false,
+                    Some(&error_message),
+                )
+                .await
+            {
+                eprintln!("Failed to append credential audit event: {}", audit_error);
+            }
+            Err(error)
+        }
+    }
 }

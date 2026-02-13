@@ -7,6 +7,7 @@ export interface E2EState {
   auth: RecordAny;
   executions: RecordAny[];
   logsByExecutionId: Record<string, RecordAny[]>;
+  credentialAuditEvents: RecordAny[];
   invokeLog: Array<{ cmd: string; args: RecordAny }>;
   commandFailures: Record<string, string>;
   commandDelaysMs: Record<string, number>;
@@ -18,6 +19,7 @@ function createState(): E2EState {
     auth: { authenticated: false },
     executions: [],
     logsByExecutionId: {},
+    credentialAuditEvents: [],
     invokeLog: [],
     commandFailures: {},
     commandDelaysMs: {},
@@ -126,12 +128,48 @@ export function installWebDriverTauriMock() {
 
     if (cmd === 'authenticate_github') {
       state.auth = { authenticated: true, username: 'e2e-user' };
+      state.credentialAuditEvents.unshift({
+        id: `audit-${Date.now()}`,
+        provider: 'github',
+        action: 'save_token',
+        success: true,
+        timestamp: new Date().toISOString(),
+      });
       return { success: true, username: 'e2e-user' };
     }
 
     if (cmd === 'delete_github_token') {
       state.auth = { authenticated: false };
+      state.credentialAuditEvents.unshift({
+        id: `audit-${Date.now()}`,
+        provider: 'github',
+        action: 'delete_token',
+        success: true,
+        timestamp: new Date().toISOString(),
+      });
       return null;
+    }
+
+    if (cmd === 'verify_github_token') {
+      const token = String(args.token ?? '');
+      if (!token.trim()) {
+        throw new Error('GitHub token cannot be empty');
+      }
+      state.auth = { authenticated: true, username: 'e2e-user' };
+      state.credentialAuditEvents.unshift({
+        id: `audit-${Date.now()}`,
+        provider: 'github',
+        action: 'verify_reveal',
+        success: true,
+        timestamp: new Date().toISOString(),
+      });
+      return { valid: true, username: 'e2e-user' };
+    }
+
+    if (cmd === 'list_credential_audit_events') {
+      const limitRaw = Number(args.limit ?? 20);
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 20;
+      return state.credentialAuditEvents.slice(0, limit);
     }
 
     if (cmd === 'list_github_credentials') {

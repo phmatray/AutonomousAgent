@@ -38,6 +38,15 @@ export interface GitHubCredential {
   is_default: boolean;
 }
 
+export interface CredentialAuditEvent {
+  id: string;
+  provider: string;
+  action: string;
+  success: boolean;
+  detail?: string;
+  timestamp: string;
+}
+
 export async function authenticateGitHub(token: string): Promise<AuthResult> {
   return invoke('authenticate_github', { token });
 }
@@ -79,4 +88,15 @@ export async function getSavedGitHubToken(): Promise<string> {
 
 export async function deleteGitHubToken(): Promise<void> {
   return invoke<void>('delete_github_token');
+}
+
+export async function verifyGitHubToken(token: string): Promise<{
+  valid: boolean;
+  username: string;
+}> {
+  return invoke('verify_github_token', { token });
+}
+
+export async function listCredentialAuditEvents(limit = 20): Promise<CredentialAuditEvent[]> {
+  return invoke('list_credential_audit_events', { limit });
 }

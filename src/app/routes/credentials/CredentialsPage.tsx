@@ -4,6 +4,9 @@ import {
   deleteGitHubToken,
   getAuthStatus,
   getSavedGitHubToken,
+  listCredentialAuditEvents,
+  type CredentialAuditEvent,
+  verifyGitHubToken,
 } from '@/lib/api/github';
 import {
   getClaudeCredentialStatus,
@@ -11,6 +14,7 @@ import {
   type ClaudeCredentialStatus,
 } from '@/lib/api/claude';
 import { CenteredPage, PageHeader } from '@/app/components/PageLayout';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 interface GitHubAuthStatus {
   authenticated: boolean;
@@ -34,6 +38,27 @@ function getInitialGitHubTokenAutofill(): boolean {
   return raw !== 'false';
 }
 
+function formatAuditTimestamp(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}
+
+function toAuditActionLabel(event: CredentialAuditEvent): string {
+  const actionMap: Record<string, string> = {
+    save_token: 'Saved token',
+    delete_token: 'Removed token',
+    verify_reveal: 'Verified reveal',
+    save_credential: 'Saved credential',
+  };
+
+  return actionMap[event.action] ?? event.action;
+}
+
 export function CredentialsPage() {
   const [githubStatus, setGithubStatus] = useState<GitHubAuthStatus | null>(null);
   const [githubStatusError, setGithubStatusError] = useState(false);
@@ -48,6 +73,10 @@ export function CredentialsPage() {
   const [githubSaveState, setGithubSaveState] = useState<SaveState>('idle');
   const [isDeletingGithub, setIsDeletingGithub] = useState(false);
   const [githubDeleteState, setGithubDeleteState] = useState<SaveState>('idle');
+  const [showDeleteGitHubDialog, setShowDeleteGitHubDialog] = useState(false);
+  const [requiresGithubRevealVerification, setRequiresGithubRevealVerification] = useState(false);
+  const [isVerifyingGithubReveal, setIsVerifyingGithubReveal] = useState(false);
+  const [githubRevealState, setGithubRevealState] = useState<SaveState>('idle');
 
   const [claudeStatus, setClaudeStatus] = useState<ClaudeCredentialStatus | null>(null);
   const [claudeStatusError, setClaudeStatusError] = useState(false);
@@ -59,6 +88,10 @@ export function CredentialsPage() {
   const [isSavingClaude, setIsSavingClaude] = useState(false);
   const [claudeSaveState, setClaudeSaveState] = useState<SaveState>('idle');
 
+  const [credentialAuditEvents, setCredentialAuditEvents] = useState<CredentialAuditEvent[]>([]);
+  const [credentialAuditError, setCredentialAuditError] = useState(false);
+  const [isRefreshingCredentialAudit, setIsRefreshingCredentialAudit] = useState(false);
+
   const refreshGitHubStatus = useCallback(async () => {
     setIsRefreshingGithub(true);
     try {
@@ -69,6 +102,19 @@ export function CredentialsPage() {
       setGithubStatusError(true);
     } finally {
       setIsRefreshingGithub(false);
+    }
+  }, []);
+
+  const refreshCredentialAudit = useCallback(async () => {
+    setIsRefreshingCredentialAudit(true);
+    try {
+      const events = await listCredentialAuditEvents(12);
+      setCredentialAuditEvents(events);
+      setCredentialAuditError(false);
+    } catch {
+      setCredentialAuditError(true);
+    } finally {
+      setIsRefreshingCredentialAudit(false);
     }
   }, []);
 
@@ -97,14 +143,17 @@ export function CredentialsPage() {
     try {
       const token = await getSavedGitHubToken();
       setGithubToken(token);
+      setRequiresGithubRevealVerification(token.trim().length > 0);
+      setShowGithubToken(false);
+      setGithubRevealState('idle');
     } catch {
       // Keep token field empty if secure storage cannot be read.
     }
   }, [isGithubTokenAutofillEnabled]);
 
   useEffect(() => {
-    void Promise.all([refreshGitHubStatus(), refreshClaudeStatus()]);
-  }, [refreshGitHubStatus, refreshClaudeStatus]);
+    void Promise.all([refreshGitHubStatus(), refreshClaudeStatus(), refreshCredentialAudit()]);
+  }, [refreshGitHubStatus, refreshClaudeStatus, refreshCredentialAudit]);
 
   useEffect(() => {
     void restoreGitHubToken();
@@ -121,6 +170,12 @@ export function CredentialsPage() {
     const timer = setTimeout(() => setGithubDeleteState('idle'), 3000);
     return () => clearTimeout(timer);
   }, [githubDeleteState]);
+
+  useEffect(() => {
+    if (githubRevealState === 'idle') return;
+    const timer = setTimeout(() => setGithubRevealState('idle'), 3000);
+    return () => clearTimeout(timer);
+  }, [githubRevealState]);
 
   useEffect(() => {
     if (claudeSaveState === 'idle') return;
@@ -140,13 +195,51 @@ export function CredentialsPage() {
     try {
       await authenticateGitHub(token);
       setGithubToken(token);
+      setRequiresGithubRevealVerification(false);
       setShowGithubToken(false);
       setGithubSaveState('success');
-      await refreshGitHubStatus();
+      await Promise.all([refreshGitHubStatus(), refreshCredentialAudit()]);
     } catch {
       setGithubSaveState('error');
     } finally {
       setIsSavingGithub(false);
+    }
+  };
+
+  const handleGitHubTokenChange = (value: string) => {
+    setGithubToken(value);
+    setRequiresGithubRevealVerification(false);
+    setGithubRevealState('idle');
+  };
+
+  const handleGitHubTokenVisibilityToggle = async () => {
+    if (showGithubToken) {
+      setShowGithubToken(false);
+      return;
+    }
+
+    const token = githubToken.trim();
+    if (!token) return;
+
+    if (!requiresGithubRevealVerification) {
+      setShowGithubToken(true);
+      return;
+    }
+
+    setIsVerifyingGithubReveal(true);
+    setGithubRevealState('idle');
+
+    try {
+      await verifyGitHubToken(token);
+      setRequiresGithubRevealVerification(false);
+      setShowGithubToken(true);
+      setGithubRevealState('success');
+      await Promise.all([refreshGitHubStatus(), refreshCredentialAudit()]);
+    } catch {
+      setShowGithubToken(false);
+      setGithubRevealState('error');
+    } finally {
+      setIsVerifyingGithubReveal(false);
     }
   };
 
@@ -155,25 +248,30 @@ export function CredentialsPage() {
     getBrowserStorage()?.setItem(GITHUB_TOKEN_AUTOFILL_STORAGE_KEY, String(enabled));
     if (!enabled) {
       setGithubToken('');
+      setRequiresGithubRevealVerification(false);
       setShowGithubToken(false);
+      setGithubRevealState('idle');
     }
   };
 
-  const handleDeleteGitHubToken = async () => {
+  const confirmDeleteGitHubToken = async () => {
     setIsDeletingGithub(true);
     setGithubDeleteState('idle');
 
     try {
       await deleteGitHubToken();
       setGithubToken('');
+      setRequiresGithubRevealVerification(false);
       setShowGithubToken(false);
+      setGithubRevealState('idle');
       setGithubSaveState('idle');
       setGithubDeleteState('success');
-      await refreshGitHubStatus();
+      await Promise.all([refreshGitHubStatus(), refreshCredentialAudit()]);
     } catch {
       setGithubDeleteState('error');
     } finally {
       setIsDeletingGithub(false);
+      setShowDeleteGitHubDialog(false);
     }
   };
 
@@ -195,6 +293,7 @@ export function CredentialsPage() {
       setClaudeApiKey('');
       setShowClaudeApiKey(false);
       setClaudeSaveState('success');
+      await refreshCredentialAudit();
     } catch {
       setClaudeSaveState('error');
     } finally {
@@ -253,7 +352,7 @@ export function CredentialsPage() {
                 id="github-token"
                 type={showGithubToken ? 'text' : 'password'}
                 value={githubToken}
-                onChange={(event) => setGithubToken(event.target.value)}
+                onChange={(event) => handleGitHubTokenChange(event.target.value)}
                 placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                 className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-sm text-white font-mono pr-16 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 aria-describedby="github-token-help"
@@ -261,17 +360,40 @@ export function CredentialsPage() {
               />
               <button
                 type="button"
-                onClick={() => setShowGithubToken((current) => !current)}
+                onClick={() => void handleGitHubTokenVisibilityToggle()}
+                disabled={!githubToken.trim() || isVerifyingGithubReveal}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-200 px-2 py-1"
-                aria-label={showGithubToken ? 'Hide token' : 'Show token'}
+                aria-label={
+                  showGithubToken
+                    ? 'Hide token'
+                    : requiresGithubRevealVerification
+                      ? 'Verify and show token'
+                      : 'Show token'
+                }
                 aria-pressed={showGithubToken}
               >
-                {showGithubToken ? 'Hide' : 'Show'}
+                {showGithubToken
+                  ? 'Hide'
+                  : isVerifyingGithubReveal
+                    ? 'Verifying...'
+                    : requiresGithubRevealVerification
+                      ? 'Verify & Show'
+                      : 'Show'}
               </button>
             </div>
             <p id="github-token-help" className="text-xs text-gray-400 mt-1">
               Required scopes: repo, workflow.
             </p>
+            {githubRevealState === 'success' ? (
+              <p className="text-xs text-green-400 mt-1" role="status" aria-live="polite">
+                Token verification succeeded.
+              </p>
+            ) : null}
+            {githubRevealState === 'error' ? (
+              <p className="text-xs text-red-400 mt-1" role="alert">
+                Token verification failed. Save a valid token and retry.
+              </p>
+            ) : null}
             <label className="inline-flex items-center gap-2 text-xs text-gray-300 mt-3 cursor-pointer">
               <input
                 type="checkbox"
@@ -293,7 +415,7 @@ export function CredentialsPage() {
             </button>
             <button
               type="button"
-              onClick={() => void handleDeleteGitHubToken()}
+              onClick={() => setShowDeleteGitHubDialog(true)}
               disabled={isDeletingGithub}
               className="px-4 py-2 bg-gray-700 text-white text-sm rounded hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gray-500"
             >
@@ -322,6 +444,42 @@ export function CredentialsPage() {
             ) : null}
           </div>
         </form>
+      </section>
+
+      <section className="bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6" aria-labelledby="credential-audit-heading">
+        <div className="flex items-center justify-between mb-4">
+          <h2 id="credential-audit-heading" className="text-lg font-semibold text-white">
+            Credential Activity
+          </h2>
+          <button
+            type="button"
+            onClick={() => void refreshCredentialAudit()}
+            disabled={isRefreshingCredentialAudit}
+            className="px-3 py-1.5 text-xs bg-gray-700 text-gray-100 rounded hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isRefreshingCredentialAudit ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+
+        {credentialAuditError ? (
+          <p className="text-sm text-red-400">Could not load credential activity.</p>
+        ) : credentialAuditEvents.length === 0 ? (
+          <p className="text-sm text-gray-400">No credential activity yet.</p>
+        ) : (
+          <ul className="space-y-2" aria-label="Credential activity log">
+            {credentialAuditEvents.map((event) => (
+              <li key={event.id} className="flex items-start justify-between gap-3 text-sm border-b border-gray-700/70 pb-2">
+                <div>
+                  <p className={event.success ? 'text-green-300' : 'text-red-300'}>
+                    {event.provider.toUpperCase()}: {toAuditActionLabel(event)}
+                  </p>
+                  {event.detail ? <p className="text-xs text-gray-400">{event.detail}</p> : null}
+                </div>
+                <time className="text-xs text-gray-500">{formatAuditTimestamp(event.timestamp)}</time>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="bg-gray-800 border border-gray-700 rounded-lg p-6" aria-labelledby="claude-credentials-heading">
@@ -427,6 +585,19 @@ export function CredentialsPage() {
           </div>
         </form>
       </section>
+
+      <ConfirmDialog
+        open={showDeleteGitHubDialog}
+        title="Remove Saved GitHub Token"
+        message="This removes all saved GitHub credential entries from local storage. Continue?"
+        confirmLabel={isDeletingGithub ? 'Removing...' : 'Remove Token'}
+        cancelLabel="Cancel"
+        confirmDisabled={isDeletingGithub}
+        onConfirm={() => void confirmDeleteGitHubToken()}
+        onCancel={() => {
+          if (!isDeletingGithub) setShowDeleteGitHubDialog(false);
+        }}
+      />
     </CenteredPage>
   );
 }
