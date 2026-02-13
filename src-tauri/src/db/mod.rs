@@ -35,6 +35,9 @@ pub async fn init_database(app: &AppHandle) -> Result<SqlitePool> {
     sqlx::query(schema::CREATE_BACKLOG_ITEMS_TABLE)
         .execute(&pool)
         .await?;
+    sqlx::query(schema::CREATE_WORKFLOW_SCHEDULES_TABLE)
+        .execute(&pool)
+        .await?;
     sqlx::query(schema::CREATE_SCHEMA_VERSION_TABLE)
         .execute(&pool)
         .await?;

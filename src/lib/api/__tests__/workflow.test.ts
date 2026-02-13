@@ -234,7 +234,7 @@ describe('workflow API', () => {
 
       await cancelExecution('exec-1');
 
-      expect(mockInvoke).toHaveBeenCalledWith('cancel_execution', { executionId: 'exec-1' });
+      expect(mockInvoke).toHaveBeenCalledWith('cancel_workflow_execution', { executionId: 'exec-1' });
     });
 
     it('propagates errors', async () => {

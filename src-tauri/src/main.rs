@@ -91,6 +91,13 @@ fn main() {
             let _ = auth_rx.recv();
             println!("All initialization complete (database + auth)");
 
+            let scheduler_engine = Arc::clone(&state.engine);
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = scheduler_engine.start_scheduler_runtime().await {
+                    eprintln!("Failed to start scheduler runtime: {}", error);
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -102,6 +109,7 @@ fn main() {
             commands::workflow::delete_workflow,
             commands::workflow::preflight_workflow,
             commands::workflow::execute_workflow,
+            commands::workflow::cancel_workflow_execution,
             commands::workflow::list_executions,
             commands::workflow::get_execution_logs,
             commands::workflow::copy_debug_bundle,

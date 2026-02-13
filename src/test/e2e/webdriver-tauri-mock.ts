@@ -162,7 +162,7 @@ export function installWebDriverTauriMock() {
       return state.logsByExecutionId[executionId] ?? [];
     }
 
-    if (cmd === 'cancel_execution') return null;
+    if (cmd === 'cancel_workflow_execution') return null;
 
     throw new Error(`Unhandled mocked command: ${cmd}`);
   }, { shouldMockEvents: true });

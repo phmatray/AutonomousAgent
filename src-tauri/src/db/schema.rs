@@ -87,6 +87,20 @@ CREATE TABLE IF NOT EXISTS backlog_items (
 )
 "#;
 
+pub const CREATE_WORKFLOW_SCHEDULES_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS workflow_schedules (
+    workflow_id TEXT PRIMARY KEY,
+    trigger_type TEXT NOT NULL,
+    cron_expression TEXT,
+    timezone TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_run_at TEXT,
+    next_run_at TEXT,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+)
+"#;
+
 pub const CREATE_SCHEMA_VERSION_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY,
@@ -108,4 +122,6 @@ CREATE INDEX IF NOT EXISTS idx_execution_logs_timestamp ON execution_logs(timest
 CREATE INDEX IF NOT EXISTS idx_backlog_items_owner_repo ON backlog_items(owner, repo);
 CREATE INDEX IF NOT EXISTS idx_backlog_items_state ON backlog_items(state);
 CREATE INDEX IF NOT EXISTS idx_backlog_items_linked_workflow_id ON backlog_items(linked_workflow_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_schedules_trigger_enabled_next
+ON workflow_schedules(trigger_type, enabled, next_run_at);
 "#;

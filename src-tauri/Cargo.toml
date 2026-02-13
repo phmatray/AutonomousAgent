@@ -26,6 +26,7 @@ uuid = { version = "1.11", features = ["v4", "serde"] }
 async-trait = "0.1"
 regex = "1.11"
 log = "0.4"
+cron = "0.12"
 
 [dev-dependencies]
 tempfile = "3"

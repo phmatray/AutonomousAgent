@@ -7,6 +7,8 @@ use crate::services::workflow_engine::state_machine::{NodeState, WorkflowState};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Result of executing a single node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -338,6 +340,51 @@ pub async fn execute_workflow(
     services: &ServiceProvider,
     retry_policy: &RetryPolicy,
 ) -> WorkflowExecutionResult {
+    execute_workflow_inner(
+        execution_id,
+        workflow,
+        registry,
+        services,
+        retry_policy,
+        None,
+    )
+    .await
+}
+
+/// Execute a workflow with cooperative cancellation support.
+pub async fn execute_workflow_cancellable(
+    execution_id: &str,
+    workflow: &Workflow,
+    registry: &NodeRegistry,
+    services: &ServiceProvider,
+    retry_policy: &RetryPolicy,
+    cancellation_flag: Arc<AtomicBool>,
+) -> WorkflowExecutionResult {
+    execute_workflow_inner(
+        execution_id,
+        workflow,
+        registry,
+        services,
+        retry_policy,
+        Some(cancellation_flag),
+    )
+    .await
+}
+
+fn is_cancelled(cancellation_flag: Option<&Arc<AtomicBool>>) -> bool {
+    cancellation_flag
+        .map(|flag| flag.load(Ordering::Relaxed))
+        .unwrap_or(false)
+}
+
+async fn execute_workflow_inner(
+    execution_id: &str,
+    workflow: &Workflow,
+    registry: &NodeRegistry,
+    services: &ServiceProvider,
+    retry_policy: &RetryPolicy,
+    cancellation_flag: Option<Arc<AtomicBool>>,
+) -> WorkflowExecutionResult {
     let workflow_start_time = std::time::Instant::now();
     let started_at = chrono::Utc::now().to_rfc3339();
     let mut node_results: Vec<NodeExecutionResult> = Vec::new();
@@ -407,11 +454,16 @@ pub async fn execute_workflow(
     // Track inactive edges caused by branching decisions, skips, and recoverable failures.
     let mut inactive_edges: HashSet<String> = HashSet::new();
     let mut failed = false;
+    let mut cancelled = false;
     let mut workflow_error: Option<String> = None;
 
     // Execute level by level
     for level in &dag.levels {
-        if failed {
+        if failed || cancelled || is_cancelled(cancellation_flag.as_ref()) {
+            if !failed {
+                cancelled = true;
+                workflow_error = Some("Execution cancelled".to_string());
+            }
             // Mark remaining nodes as skipped
             for node_id in level {
                 node_results.push(NodeExecutionResult {
@@ -420,7 +472,11 @@ pub async fn execute_workflow(
                     resolved_config: None,
                     input: None,
                     output: None,
-                    error: Some("Skipped due to prior failure".into()),
+                    error: Some(if failed {
+                        "Skipped due to prior failure".into()
+                    } else {
+                        "Skipped because execution was cancelled".into()
+                    }),
                     started_at: chrono::Utc::now().to_rfc3339(),
                     completed_at: chrono::Utc::now().to_rfc3339(),
                     duration_ms: 0,
@@ -434,6 +490,26 @@ pub async fn execute_workflow(
 
         // Execute nodes in topological order.
         for node_id in level {
+            if is_cancelled(cancellation_flag.as_ref()) {
+                cancelled = true;
+                workflow_error = Some("Execution cancelled".to_string());
+                node_results.push(NodeExecutionResult {
+                    node_id: node_id.clone(),
+                    status: NodeState::Skipped.as_str().to_string(),
+                    resolved_config: None,
+                    input: None,
+                    output: None,
+                    error: Some("Skipped because execution was cancelled".into()),
+                    started_at: chrono::Utc::now().to_rfc3339(),
+                    completed_at: chrono::Utc::now().to_rfc3339(),
+                    duration_ms: 0,
+                    retry_count: 0,
+                    policy: EffectiveNodeExecutionPolicy::default(),
+                });
+                deactivate_outgoing_edges(node_id, &dag, &mut inactive_edges);
+                continue;
+            }
+
             let node = &dag.nodes[node_id];
             if !should_execute_node(node, &dag, &inactive_edges) {
                 node_results.push(NodeExecutionResult {
@@ -517,6 +593,7 @@ pub async fn execute_workflow(
             let mut last_error = None;
             let mut retry_count = 0u32;
             let mut node_output = None;
+            let mut node_cancelled = false;
 
             // Log node execution start
             log::info!(
@@ -529,6 +606,11 @@ pub async fn execute_workflow(
 
             for attempt in 0..=policy.max_retries {
                 retry_count = attempt;
+                if is_cancelled(cancellation_flag.as_ref()) {
+                    node_cancelled = true;
+                    last_error = Some("Execution cancelled".to_string());
+                    break;
+                }
 
                 if attempt > 0 {
                     log::warn!(
@@ -583,6 +665,10 @@ pub async fn execute_workflow(
                         );
                         last_error = Some(format!("{}", e));
                         if attempt < policy.max_retries {
+                            if is_cancelled(cancellation_flag.as_ref()) {
+                                node_cancelled = true;
+                                break;
+                            }
                             let delay_ms = retry_delay_for_attempt(&policy, attempt + 1);
                             tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
                         }
@@ -636,6 +722,26 @@ pub async fn execute_workflow(
                     policy: policy.clone(),
                 });
             } else {
+                if node_cancelled {
+                    cancelled = true;
+                    workflow_error = Some("Execution cancelled".to_string());
+                    deactivate_outgoing_edges(node_id, &dag, &mut inactive_edges);
+                    node_results.push(NodeExecutionResult {
+                        node_id: node_id.clone(),
+                        status: NodeState::Skipped.as_str().to_string(),
+                        resolved_config: resolved_config.clone(),
+                        input: Some(config.clone()),
+                        output: None,
+                        error: Some("Execution cancelled".to_string()),
+                        started_at: node_started,
+                        completed_at: node_completed,
+                        duration_ms,
+                        retry_count,
+                        policy: policy.clone(),
+                    });
+                    continue;
+                }
+
                 let failure_message = format!(
                     "Node {} failed after {} retries: {}",
                     node_id,
@@ -669,6 +775,8 @@ pub async fn execute_workflow(
 
     let final_status = if failed {
         WorkflowState::Failed
+    } else if cancelled {
+        WorkflowState::Cancelled
     } else {
         WorkflowState::Completed
     };
@@ -700,6 +808,16 @@ pub async fn execute_workflow(
             failed_count,
             skipped_count,
             workflow_error.as_deref().unwrap_or("unknown")
+        );
+    } else if cancelled {
+        log::warn!(
+            "[Workflow:{}] [Execution:{}] Workflow CANCELLED after {:?} - {} completed, {} failed, {} skipped",
+            workflow.id,
+            execution_id,
+            workflow_duration,
+            completed_count,
+            failed_count,
+            skipped_count
         );
     } else {
         log::info!(

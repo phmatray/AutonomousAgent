@@ -227,6 +227,7 @@ pub trait NodeExecutor: Send + Sync {
 
 /// Provides access to application services for node executors.
 /// This wraps the services so node executors don't depend on Tauri state directly.
+#[derive(Clone)]
 pub struct ServiceProvider {
     pub github: Arc<crate::services::GitHubClient>,
     pub storage: Arc<crate::services::StorageService>,

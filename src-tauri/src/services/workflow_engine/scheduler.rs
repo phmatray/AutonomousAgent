@@ -1,7 +1,10 @@
+use crate::errors::{AppError, Result};
+use crate::models::workflow::Workflow;
+use chrono::{DateTime, Utc};
+use cron::Schedule;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use sqlx::sqlite::SqlitePool;
+use std::str::FromStr;
 
 /// Describes when a workflow should be triggered.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -10,100 +13,222 @@ pub enum TriggerConfig {
     /// Triggered manually via the UI or API.
     Manual,
     /// Triggered on a cron schedule (e.g. "0 */6 * * *").
-    Cron { expression: String },
+    Cron {
+        expression: String,
+        timezone: String,
+    },
     /// Triggered by an external webhook.
     Webhook { path: String },
     /// Triggered when the workflow returns to IDLE state.
     StateIdle,
 }
 
-/// A scheduled workflow entry.
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-struct ScheduledWorkflow {
-    workflow_id: String,
-    trigger: TriggerConfig,
-    enabled: bool,
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ScheduledWorkflow {
+    pub workflow_id: String,
+    pub cron_expression: Option<String>,
 }
 
-/// Manages workflow triggers and scheduling.
-///
-/// For MVP, this supports manual triggers and state-based triggers.
-/// Cron and webhook triggers store their configuration but execution
-/// is deferred to a future phase.
-#[allow(dead_code)]
-pub struct Scheduler {
-    schedules: Arc<RwLock<HashMap<String, ScheduledWorkflow>>>,
-}
+/// Durable scheduler persisted in SQLite.
+pub struct Scheduler;
 
-#[allow(dead_code)]
 impl Scheduler {
     pub fn new() -> Self {
-        Self {
-            schedules: Arc::new(RwLock::new(HashMap::new())),
+        Self
+    }
+
+    pub fn trigger_from_workflow(workflow: &Workflow) -> Option<TriggerConfig> {
+        let trigger_node = workflow
+            .nodes
+            .iter()
+            .find(|node| node.node_type == "trigger.cron" || node.node_type == "trigger")?;
+
+        let config = trigger_node.config.as_ref();
+        if trigger_node.node_type == "trigger.cron" {
+            let expression = config
+                .and_then(|value| value.get("schedule"))
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)?;
+            let timezone = config
+                .and_then(|value| value.get("timezone"))
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("UTC")
+                .to_string();
+            return Some(TriggerConfig::Cron {
+                expression,
+                timezone,
+            });
+        }
+
+        let trigger_type = config
+            .and_then(|value| value.get("trigger_type"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("manual")
+            .trim()
+            .to_ascii_lowercase();
+
+        match trigger_type.as_str() {
+            "state" | "state_idle" => Some(TriggerConfig::StateIdle),
+            "webhook" => {
+                let path = config
+                    .and_then(|value| value.get("path"))
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("/workflow-webhook")
+                    .to_string();
+                Some(TriggerConfig::Webhook { path })
+            }
+            _ => Some(TriggerConfig::Manual),
         }
     }
 
-    /// Register a workflow with a trigger configuration.
-    pub async fn register(&self, workflow_id: &str, trigger: TriggerConfig) {
-        let mut schedules = self.schedules.write().await;
-        schedules.insert(
-            workflow_id.to_string(),
-            ScheduledWorkflow {
-                workflow_id: workflow_id.to_string(),
-                trigger,
-                enabled: true,
-            },
-        );
-    }
+    pub async fn sync_workflow_schedule(
+        &self,
+        pool: &SqlitePool,
+        workflow: &Workflow,
+    ) -> Result<()> {
+        let Some(trigger) = Self::trigger_from_workflow(workflow) else {
+            return self.remove_workflow_schedule(pool, &workflow.id).await;
+        };
 
-    /// Unregister a workflow from scheduling.
-    pub async fn unregister(&self, workflow_id: &str) {
-        self.schedules.write().await.remove(workflow_id);
-    }
-
-    /// Enable or disable a schedule.
-    pub async fn set_enabled(&self, workflow_id: &str, enabled: bool) -> bool {
-        let mut schedules = self.schedules.write().await;
-        if let Some(entry) = schedules.get_mut(workflow_id) {
-            entry.enabled = enabled;
-            true
-        } else {
-            false
+        match trigger {
+            TriggerConfig::Manual => self.remove_workflow_schedule(pool, &workflow.id).await,
+            TriggerConfig::Cron {
+                expression,
+                timezone,
+            } => {
+                let now = Utc::now();
+                let next_run_at = Self::next_run_at(&expression, now)?;
+                sqlx::query(
+                    "INSERT INTO workflow_schedules (workflow_id, trigger_type, cron_expression, timezone, enabled, last_run_at, next_run_at, updated_at)
+                     VALUES (?, 'cron', ?, ?, 1, NULL, ?, ?)
+                     ON CONFLICT(workflow_id) DO UPDATE SET
+                       trigger_type = excluded.trigger_type,
+                       cron_expression = excluded.cron_expression,
+                       timezone = excluded.timezone,
+                       enabled = excluded.enabled,
+                       next_run_at = excluded.next_run_at,
+                       updated_at = excluded.updated_at",
+                )
+                .bind(&workflow.id)
+                .bind(&expression)
+                .bind(&timezone)
+                .bind(next_run_at)
+                .bind(now.to_rfc3339())
+                .execute(pool)
+                .await?;
+                Ok(())
+            }
+            TriggerConfig::Webhook { path } => {
+                let now = Utc::now().to_rfc3339();
+                sqlx::query(
+                    "INSERT INTO workflow_schedules (workflow_id, trigger_type, cron_expression, timezone, enabled, last_run_at, next_run_at, updated_at)
+                     VALUES (?, 'webhook', ?, NULL, 1, NULL, NULL, ?)
+                     ON CONFLICT(workflow_id) DO UPDATE SET
+                       trigger_type = excluded.trigger_type,
+                       cron_expression = excluded.cron_expression,
+                       timezone = excluded.timezone,
+                       enabled = excluded.enabled,
+                       next_run_at = excluded.next_run_at,
+                       updated_at = excluded.updated_at",
+                )
+                .bind(&workflow.id)
+                .bind(path)
+                .bind(now)
+                .execute(pool)
+                .await?;
+                Ok(())
+            }
+            TriggerConfig::StateIdle => {
+                let now = Utc::now().to_rfc3339();
+                sqlx::query(
+                    "INSERT INTO workflow_schedules (workflow_id, trigger_type, cron_expression, timezone, enabled, last_run_at, next_run_at, updated_at)
+                     VALUES (?, 'state_idle', NULL, NULL, 1, NULL, NULL, ?)
+                     ON CONFLICT(workflow_id) DO UPDATE SET
+                       trigger_type = excluded.trigger_type,
+                       cron_expression = excluded.cron_expression,
+                       timezone = excluded.timezone,
+                       enabled = excluded.enabled,
+                       next_run_at = excluded.next_run_at,
+                       updated_at = excluded.updated_at",
+                )
+                .bind(&workflow.id)
+                .bind(now)
+                .execute(pool)
+                .await?;
+                Ok(())
+            }
         }
     }
 
-    /// Check if a workflow should run based on a manual trigger.
-    pub async fn should_trigger_manual(&self, workflow_id: &str) -> bool {
-        let schedules = self.schedules.read().await;
-        schedules
-            .get(workflow_id)
-            .map(|s| s.enabled && matches!(s.trigger, TriggerConfig::Manual))
-            .unwrap_or(true) // Unregistered workflows can always be triggered manually
+    pub async fn remove_workflow_schedule(
+        &self,
+        pool: &SqlitePool,
+        workflow_id: &str,
+    ) -> Result<()> {
+        sqlx::query("DELETE FROM workflow_schedules WHERE workflow_id = ?")
+            .bind(workflow_id)
+            .execute(pool)
+            .await?;
+        Ok(())
     }
 
-    /// Get all workflows that should trigger on state becoming idle.
-    pub async fn get_idle_triggered_workflows(&self) -> Vec<String> {
-        let schedules = self.schedules.read().await;
-        schedules
-            .values()
-            .filter(|s| s.enabled && matches!(s.trigger, TriggerConfig::StateIdle))
-            .map(|s| s.workflow_id.clone())
-            .collect()
+    pub async fn due_cron_workflows(
+        &self,
+        pool: &SqlitePool,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<ScheduledWorkflow>> {
+        let now_iso = now.to_rfc3339();
+        let rows = sqlx::query_as::<_, ScheduledWorkflow>(
+            "SELECT workflow_id, cron_expression
+             FROM workflow_schedules
+             WHERE enabled = 1
+               AND trigger_type = 'cron'
+               AND next_run_at IS NOT NULL
+               AND next_run_at <= ?
+             ORDER BY next_run_at ASC",
+        )
+        .bind(now_iso)
+        .fetch_all(pool)
+        .await?;
+        Ok(rows)
     }
 
-    /// Get the trigger configuration for a workflow.
-    pub async fn get_trigger(&self, workflow_id: &str) -> Option<TriggerConfig> {
-        let schedules = self.schedules.read().await;
-        schedules.get(workflow_id).map(|s| s.trigger.clone())
+    pub async fn mark_cron_executed(
+        &self,
+        pool: &SqlitePool,
+        workflow_id: &str,
+        expression: &str,
+        executed_at: DateTime<Utc>,
+    ) -> Result<()> {
+        let next_run_at = Self::next_run_at(expression, executed_at)?;
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "UPDATE workflow_schedules
+             SET last_run_at = ?, next_run_at = ?, updated_at = ?
+             WHERE workflow_id = ?",
+        )
+        .bind(executed_at.to_rfc3339())
+        .bind(next_run_at)
+        .bind(now)
+        .bind(workflow_id)
+        .execute(pool)
+        .await?;
+        Ok(())
     }
 
-    /// List all registered schedules.
-    pub async fn list_schedules(&self) -> Vec<(String, TriggerConfig, bool)> {
-        let schedules = self.schedules.read().await;
-        schedules
-            .values()
-            .map(|s| (s.workflow_id.clone(), s.trigger.clone(), s.enabled))
-            .collect()
+    fn next_run_at(expression: &str, from: DateTime<Utc>) -> Result<Option<String>> {
+        let schedule = Schedule::from_str(expression).map_err(|error| {
+            AppError::Validation(format!(
+                "Invalid cron expression '{}': {}",
+                expression, error
+            ))
+        })?;
+        Ok(schedule.after(&from).next().map(|date| date.to_rfc3339()))
     }
 }

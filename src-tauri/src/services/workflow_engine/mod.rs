@@ -10,13 +10,20 @@ use crate::models::workflow::{Workflow, WorkflowExecution};
 use executor::{RetryPolicy, WorkflowExecutionResult};
 use node_registry::{build_default_registry, ClaudeProvider, NodeRegistry, ServiceProvider};
 use preflight::WorkflowPreflightResult;
-use scheduler::Scheduler;
+use scheduler::{ScheduledWorkflow, Scheduler};
 use serde_json::json;
 use state_machine::WorkflowState;
 
 use sqlx::sqlite::SqlitePool;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+struct RunningExecution {
+    workflow_id: String,
+    cancellation_flag: Arc<AtomicBool>,
+}
 
 struct ExecutionLogInsert<'a> {
     execution_id: &'a str,
@@ -29,22 +36,26 @@ struct ExecutionLogInsert<'a> {
 
 /// The top-level workflow engine that orchestrates everything.
 pub struct WorkflowEngine {
-    registry: NodeRegistry,
+    registry: Arc<NodeRegistry>,
     scheduler: Scheduler,
     db_pool: Arc<RwLock<Option<SqlitePool>>>,
     services: Arc<RwLock<Option<ServiceProvider>>>,
     retry_policy: RetryPolicy,
+    running_executions: Arc<RwLock<HashMap<String, RunningExecution>>>,
+    scheduler_started: Arc<AtomicBool>,
 }
 
 #[allow(dead_code)]
 impl WorkflowEngine {
     pub fn new() -> Self {
         Self {
-            registry: build_default_registry(),
+            registry: Arc::new(build_default_registry()),
             scheduler: Scheduler::new(),
             db_pool: Arc::new(RwLock::new(None)),
             services: Arc::new(RwLock::new(None)),
             retry_policy: RetryPolicy::default(),
+            running_executions: Arc::new(RwLock::new(HashMap::new())),
+            scheduler_started: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -141,6 +152,10 @@ impl WorkflowEngine {
         .execute(&pool)
         .await?;
 
+        self.scheduler
+            .sync_workflow_schedule(&pool, workflow)
+            .await?;
+
         Ok(workflow.clone())
     }
 
@@ -174,9 +189,14 @@ impl WorkflowEngine {
         .execute(&pool)
         .await?;
 
-        self.get_workflow(id)
+        let updated = self
+            .get_workflow(id)
             .await?
-            .ok_or_else(|| AppError::Validation(format!("Workflow {} not found", id)))
+            .ok_or_else(|| AppError::Validation(format!("Workflow {} not found", id)))?;
+        self.scheduler
+            .sync_workflow_schedule(&pool, &updated)
+            .await?;
+        Ok(updated)
     }
 
     pub async fn delete_workflow(&self, id: &str) -> Result<()> {
@@ -216,6 +236,7 @@ impl WorkflowEngine {
             .await?;
 
         tx.commit().await?;
+        self.scheduler.remove_workflow_schedule(&pool, id).await?;
         Ok(())
     }
 
@@ -224,7 +245,7 @@ impl WorkflowEngine {
     /// Run static/dynamic preflight checks for a workflow definition.
     pub async fn preflight_workflow(&self, workflow: &Workflow) -> Result<WorkflowPreflightResult> {
         let services = self.services.read().await;
-        Ok(preflight::run_preflight(workflow, &self.registry, services.as_ref()).await)
+        Ok(preflight::run_preflight(workflow, self.registry.as_ref(), services.as_ref()).await)
     }
 
     /// Execute a workflow by ID.
@@ -253,7 +274,7 @@ impl WorkflowEngine {
         let result = executor::execute_workflow(
             &execution_id,
             &workflow,
-            &self.registry,
+            self.registry.as_ref(),
             services,
             &self.retry_policy,
         )
@@ -265,13 +286,266 @@ impl WorkflowEngine {
         Ok(result)
     }
 
+    /// Start workflow execution asynchronously and return the execution record immediately.
+    pub async fn start_workflow_execution(
+        self: &Arc<Self>,
+        workflow_id: &str,
+        trigger_type: Option<&str>,
+    ) -> Result<WorkflowExecution> {
+        if self.is_workflow_running(workflow_id).await {
+            return Err(AppError::Validation(format!(
+                "Workflow {} is already running",
+                workflow_id
+            )));
+        }
+
+        let workflow = self
+            .get_workflow(workflow_id)
+            .await?
+            .ok_or_else(|| AppError::Validation(format!("Workflow {} not found", workflow_id)))?;
+
+        let services = {
+            let services_guard = self.services.read().await;
+            services_guard
+                .as_ref()
+                .ok_or_else(|| AppError::Unknown("Engine not initialized with services".into()))?
+                .clone()
+        };
+
+        let execution_id = uuid::Uuid::new_v4().to_string();
+        let trigger = trigger_type.unwrap_or("manual");
+        let started_at = self
+            .record_execution_start(&execution_id, workflow_id, trigger)
+            .await?;
+
+        let cancellation_flag = Arc::new(AtomicBool::new(false));
+        self.running_executions.write().await.insert(
+            execution_id.clone(),
+            RunningExecution {
+                workflow_id: workflow_id.to_string(),
+                cancellation_flag: Arc::clone(&cancellation_flag),
+            },
+        );
+
+        let engine = Arc::clone(self);
+        let execution_id_for_task = execution_id.clone();
+        tokio::spawn(async move {
+            let result = executor::execute_workflow_cancellable(
+                &execution_id_for_task,
+                &workflow,
+                engine.registry.as_ref(),
+                &services,
+                &engine.retry_policy,
+                cancellation_flag,
+            )
+            .await;
+
+            if let Err(error) = engine.record_execution_complete(&result).await {
+                log::error!(
+                    "[Workflow:{}] [Execution:{}] Failed to persist completion: {}",
+                    result.workflow_id,
+                    result.execution_id,
+                    error
+                );
+            }
+
+            engine
+                .running_executions
+                .write()
+                .await
+                .remove(&execution_id_for_task);
+        });
+
+        Ok(WorkflowExecution {
+            id: execution_id,
+            workflow_id: workflow_id.to_string(),
+            status: WorkflowState::Running.as_str().to_string(),
+            trigger_type: Some(trigger.to_string()),
+            started_at: Some(started_at),
+            completed_at: None,
+            error: None,
+            context: None,
+            current_node_id: None,
+        })
+    }
+
+    pub async fn cancel_workflow_execution(&self, execution_id: &str) -> Result<()> {
+        let running = self.running_executions.read().await;
+        let entry = running.get(execution_id).ok_or_else(|| {
+            AppError::Validation(format!(
+                "Workflow execution {} is not running",
+                execution_id
+            ))
+        })?;
+        entry.cancellation_flag.store(true, Ordering::Relaxed);
+        let workflow_id = entry.workflow_id.clone();
+        drop(running);
+
+        let pool = self.get_pool().await?;
+        let now = chrono::Utc::now().to_rfc3339();
+        Self::append_execution_log(
+            &pool,
+            ExecutionLogInsert {
+                execution_id,
+                node_id: None,
+                level: "WARN",
+                message: "Cancellation requested",
+                metadata: Some(json!({ "workflow_id": workflow_id })),
+                timestamp: &now,
+            },
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn is_workflow_running(&self, workflow_id: &str) -> bool {
+        self.running_executions
+            .read()
+            .await
+            .values()
+            .any(|execution| execution.workflow_id == workflow_id)
+    }
+
+    pub async fn start_scheduler_runtime(self: &Arc<Self>) -> Result<()> {
+        if self
+            .scheduler_started
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Ok(());
+        }
+
+        let pool = self.get_pool().await?;
+        for workflow in self.list_workflows().await? {
+            if let Err(error) = self
+                .scheduler
+                .sync_workflow_schedule(&pool, &workflow)
+                .await
+            {
+                log::warn!(
+                    "[Workflow:{}] Failed to sync schedule during startup: {}",
+                    workflow.id,
+                    error
+                );
+            }
+        }
+
+        let engine = Arc::clone(self);
+        tokio::spawn(async move {
+            loop {
+                if let Err(error) = engine.poll_due_cron_schedules().await {
+                    log::error!("Scheduler poll failed: {}", error);
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+            }
+        });
+
+        Ok(())
+    }
+
+    async fn poll_due_cron_schedules(&self) -> Result<()> {
+        let pool = self.get_pool().await?;
+        let due = self
+            .scheduler
+            .due_cron_workflows(&pool, chrono::Utc::now())
+            .await?;
+
+        for schedule in due {
+            if self.is_workflow_running(&schedule.workflow_id).await {
+                continue;
+            }
+            let expression = schedule
+                .cron_expression
+                .clone()
+                .ok_or_else(|| AppError::Validation("Missing cron expression".to_string()))?;
+            self.scheduler
+                .mark_cron_executed(
+                    &pool,
+                    &schedule.workflow_id,
+                    &expression,
+                    chrono::Utc::now(),
+                )
+                .await?;
+
+            if let Err(error) = self.start_workflow_execution_for_scheduler(&schedule).await {
+                log::error!(
+                    "[Workflow:{}] Failed to trigger scheduled execution: {}",
+                    schedule.workflow_id,
+                    error
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn start_workflow_execution_for_scheduler(
+        &self,
+        schedule: &ScheduledWorkflow,
+    ) -> Result<()> {
+        let Some(workflow) = self.get_workflow(&schedule.workflow_id).await? else {
+            return Ok(());
+        };
+        let Some(services) = self.services.read().await.clone() else {
+            return Err(AppError::Unknown(
+                "Engine not initialized with services".to_string(),
+            ));
+        };
+
+        let execution_id = uuid::Uuid::new_v4().to_string();
+        let trigger_label = "cron";
+        self.record_execution_start(&execution_id, &workflow.id, trigger_label)
+            .await?;
+
+        let cancellation_flag = Arc::new(AtomicBool::new(false));
+        self.running_executions.write().await.insert(
+            execution_id.clone(),
+            RunningExecution {
+                workflow_id: workflow.id.clone(),
+                cancellation_flag: Arc::clone(&cancellation_flag),
+            },
+        );
+
+        let registry = Arc::clone(&self.registry);
+        let retry_policy = self.retry_policy.clone();
+        let db_pool = self.db_pool_handle();
+        let running = Arc::clone(&self.running_executions);
+        tokio::spawn(async move {
+            let result = executor::execute_workflow_cancellable(
+                &execution_id,
+                &workflow,
+                registry.as_ref(),
+                &services,
+                &retry_policy,
+                cancellation_flag,
+            )
+            .await;
+
+            if let Err(error) =
+                WorkflowEngine::record_execution_complete_with_pool(&db_pool, &result).await
+            {
+                log::error!(
+                    "[Workflow:{}] [Execution:{}] Failed to persist completion: {}",
+                    result.workflow_id,
+                    result.execution_id,
+                    error
+                );
+            }
+
+            running.write().await.remove(&execution_id);
+        });
+
+        Ok(())
+    }
+
     /// Record the start of a workflow execution in the database.
     async fn record_execution_start(
         &self,
         execution_id: &str,
         workflow_id: &str,
         trigger_type: &str,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let pool = self.get_pool().await?;
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -286,7 +560,7 @@ impl WorkflowEngine {
         .execute(&pool)
         .await?;
 
-        self.append_execution_log(
+        Self::append_execution_log(
             &pool,
             ExecutionLogInsert {
                 execution_id,
@@ -299,12 +573,26 @@ impl WorkflowEngine {
         )
         .await?;
 
-        Ok(())
+        Ok(now)
     }
 
     /// Record the completion of a workflow execution.
     async fn record_execution_complete(&self, result: &WorkflowExecutionResult) -> Result<()> {
-        let pool = self.get_pool().await?;
+        Self::record_execution_complete_with_pool(&self.db_pool, result).await
+    }
+
+    async fn record_execution_complete_with_pool(
+        db_pool: &Arc<RwLock<Option<SqlitePool>>>,
+        result: &WorkflowExecutionResult,
+    ) -> Result<()> {
+        let pool = db_pool
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| AppError::Database {
+                code: crate::errors::types::ErrorCode::DatabaseNotInitialized.as_str(),
+                message: "Database not initialized".to_string(),
+            })?;
         let context_json = serde_json::to_string(&result.node_results)?;
 
         sqlx::query(
@@ -327,7 +615,7 @@ impl WorkflowEngine {
             Some(error) => format!("Workflow execution {}: {}", result.status, error),
             None => format!("Workflow execution {}", result.status),
         };
-        self.append_execution_log(
+        Self::append_execution_log(
             &pool,
             ExecutionLogInsert {
                 execution_id: &result.execution_id,
@@ -344,7 +632,6 @@ impl WorkflowEngine {
         )
         .await?;
 
-        // Also record individual node executions
         for node_result in &result.node_results {
             let output_json = node_result
                 .output
@@ -383,7 +670,7 @@ impl WorkflowEngine {
                     node_result.node_id, node_result.status, node_result.retry_count
                 ),
             };
-            self.append_execution_log(
+            Self::append_execution_log(
                 &pool,
                 ExecutionLogInsert {
                     execution_id: &result.execution_id,
@@ -400,11 +687,7 @@ impl WorkflowEngine {
         Ok(())
     }
 
-    async fn append_execution_log(
-        &self,
-        pool: &SqlitePool,
-        entry: ExecutionLogInsert<'_>,
-    ) -> Result<()> {
+    async fn append_execution_log(pool: &SqlitePool, entry: ExecutionLogInsert<'_>) -> Result<()> {
         let metadata_json = entry
             .metadata
             .as_ref()

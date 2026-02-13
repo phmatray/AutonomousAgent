@@ -1,6 +1,5 @@
 use crate::errors::Result;
 use crate::models::workflow::{Workflow, WorkflowExecution};
-use crate::services::workflow_engine::executor::WorkflowExecutionResult;
 use crate::services::workflow_engine::preflight::WorkflowPreflightResult;
 use crate::services::AppState;
 use chrono;
@@ -59,11 +58,19 @@ pub async fn execute_workflow(
     workflow_id: String,
     trigger_type: Option<String>,
     state: State<'_, AppState>,
-) -> Result<WorkflowExecutionResult> {
+) -> Result<WorkflowExecution> {
     state
         .engine
-        .execute_workflow(&workflow_id, trigger_type.as_deref())
+        .start_workflow_execution(&workflow_id, trigger_type.as_deref())
         .await
+}
+
+#[tauri::command]
+pub async fn cancel_workflow_execution(
+    execution_id: String,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    state.engine.cancel_workflow_execution(&execution_id).await
 }
 
 #[tauri::command]
