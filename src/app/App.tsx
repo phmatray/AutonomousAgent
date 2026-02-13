@@ -1,20 +1,40 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useRouter } from '@/lib/router';
+import { Navigation } from '@/app/components/Navigation';
+import { DashboardPage } from '@/app/routes/dashboard/DashboardPage';
+import { EditorPage } from '@/app/routes/editor/EditorPage';
+import { MonitoringPage } from '@/app/routes/monitoring/MonitoringPage';
+import { SettingsPage } from '@/app/routes/settings/SettingsPage';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+function AppContent() {
+  const { route, navigate } = useRouter();
+
+  return (
+    <div className="flex flex-col h-screen bg-gray-950 text-white">
+      <Navigation currentRoute={route} onNavigate={navigate} />
+      <main className="flex-1 overflow-hidden" role="main">
+        {route === 'dashboard' && <DashboardPage />}
+        {route === 'editor' && <EditorPage />}
+        {route === 'monitoring' && <MonitoringPage />}
+        {route === 'settings' && <SettingsPage />}
+      </main>
+    </div>
+  );
+}
 
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="flex h-screen w-full items-center justify-center bg-gray-900">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-white mb-4">
-            Autonomous Agent
-          </h1>
-          <p className="text-gray-400">
-            AI-powered autonomous developer system
-          </p>
-        </div>
-      </div>
+      <AppContent />
     </QueryClientProvider>
   );
 }

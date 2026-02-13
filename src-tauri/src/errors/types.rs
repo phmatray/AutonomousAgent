@@ -35,22 +35,19 @@ pub enum AppError {
     #[error("Keyring error: {0}")]
     Keyring(#[from] keyring::Error),
 
+    #[error("Tauri error: {0}")]
+    Tauri(#[from] tauri::Error),
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
 
 impl serde::Serialize for AppError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::ser::Serializer,
     {
         serializer.serialize_str(self.to_string().as_ref())
-    }
-}
-
-impl From<AppError> for tauri::ipc::InvokeError {
-    fn from(error: AppError) -> Self {
-        tauri::ipc::InvokeError::from(error.to_string())
     }
 }
 
