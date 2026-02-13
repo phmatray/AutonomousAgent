@@ -119,7 +119,7 @@ export function MonitoringPage() {
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [streamingLogs, setStreamingLogs] = useState<ExecutionLog[]>([]);
 
-  const { data: executions } = useQuery<WorkflowExecution[]>({
+  const { data: executions, error: executionsError } = useQuery<WorkflowExecution[]>({
     queryKey: ['executions'],
     queryFn: () => listExecutions(),
     refetchInterval: 3000,
@@ -170,6 +170,11 @@ export function MonitoringPage() {
             Real-time workflow monitoring
           </p>
         </div>
+        {executionsError && (
+          <div className="mx-3 mt-3 p-2.5 rounded border border-red-800 bg-red-900/25 text-xs text-red-300" role="alert">
+            Could not load executions
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto p-3 space-y-2" role="list" aria-label="Workflow executions">
           {(!executions || executions.length === 0) && (
             <p className="text-sm text-gray-500 text-center py-8">
