@@ -23,6 +23,13 @@ const LOG_LEVEL_STYLES: Record<string, string> = {
   ERROR: 'text-red-400',
 };
 
+interface ExecutionContextEntry {
+  node_id?: string;
+  status?: string;
+  output?: Record<string, unknown> | null;
+  error?: string | null;
+}
+
 function formatExportError(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
@@ -31,6 +38,69 @@ function formatExportError(error: unknown): string {
   } catch {
     return 'Failed to export debug bundle';
   }
+}
+
+function getExecutionContextEntries(context: unknown): ExecutionContextEntry[] {
+  if (!Array.isArray(context)) return [];
+  return context.filter((entry): entry is ExecutionContextEntry =>
+    typeof entry === 'object' && entry !== null,
+  );
+}
+
+function NodeOutputsPanel({ contextEntries }: { contextEntries: ExecutionContextEntry[] }) {
+  const completedWithOutput = contextEntries.filter(
+    (entry) => entry.status === 'COMPLETED' && entry.output && Object.keys(entry.output).length > 0,
+  );
+
+  if (completedWithOutput.length === 0) {
+    return (
+      <div className="px-4 py-3 border-b border-gray-800 bg-gray-900/80">
+        <p className="text-xs text-gray-500">No node outputs available for this execution.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 py-3 border-b border-gray-800 bg-gray-900/80 space-y-3">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-300">Node Outputs</h4>
+      {completedWithOutput.map((entry, outputIndex) => {
+        const output = entry.output ?? {};
+        const issues = Array.isArray(output.issues) ? output.issues : null;
+        return (
+          <div key={`${entry.node_id ?? 'unknown'}-${outputIndex}`} className="rounded border border-gray-700 bg-gray-900/60 p-3">
+            <p className="text-xs text-gray-400 mb-2">
+              Node: <span className="font-mono text-gray-300">{entry.node_id ?? 'unknown'}</span>
+            </p>
+            {issues && (
+              <div className="mb-2">
+                <p className="text-xs text-blue-300 mb-1">Issues ({issues.length})</p>
+                <ul className="space-y-1 max-h-36 overflow-y-auto">
+                  {issues.map((issue, idx) => {
+                    const item = issue as Record<string, unknown>;
+                    const title = typeof item.title === 'string' ? item.title : 'Untitled issue';
+                    const number = typeof item.number === 'number' ? `#${item.number}` : '';
+                    return (
+                      <li key={`${entry.node_id}-${idx}`} className="text-xs text-gray-300">
+                        {number} {title}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+            <details>
+              <summary className="cursor-pointer text-xs text-gray-400 hover:text-gray-300">
+                View raw output JSON
+              </summary>
+              <pre className="mt-2 text-xs text-gray-300 whitespace-pre-wrap break-all">
+                {JSON.stringify(output, null, 2)}
+              </pre>
+            </details>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function ExecutionCard({
@@ -159,6 +229,7 @@ export function MonitoringPage() {
   const allLogs = [...logs, ...streamingLogs];
   const selectedExecution = executions.find((e) => e.id === selectedExecutionId);
   const isStreaming = selectedExecution?.status === 'RUNNING';
+  const contextEntries = getExecutionContextEntries(selectedExecution?.context);
 
   const handleCancel = () => send({ type: 'CANCEL_SELECTED' });
   const [exportState, setExportState] = useState<{
@@ -283,6 +354,7 @@ export function MonitoringPage() {
                 )}
               </div>
             )}
+            <NodeOutputsPanel contextEntries={contextEntries} />
             <LogViewer logs={allLogs} isStreaming={isStreaming} />
           </>
         ) : (

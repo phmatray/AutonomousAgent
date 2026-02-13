@@ -9,6 +9,7 @@ interface EditorDomainContext {
 type EditorDomainEvent =
   | { type: 'WORKFLOW_LOADED'; id: string; name: string }
   | { type: 'WORKFLOW_CREATED'; id: string; name: string }
+  | { type: 'WORKFLOW_IMPORTED'; name: string }
   | { type: 'WORKFLOW_CLEARED' }
   | { type: 'WORKFLOW_NAME_CHANGED'; name: string }
   | { type: 'GRAPH_CHANGED' }
@@ -42,6 +43,13 @@ export const editorDomainMachine = setup({
             workflowId: ({ event }) => event.id,
             workflowName: ({ event }) => event.name,
             isDirty: false,
+          }),
+        },
+        WORKFLOW_IMPORTED: {
+          actions: assign({
+            workflowId: null,
+            workflowName: ({ event }) => event.name,
+            isDirty: true,
           }),
         },
         WORKFLOW_CLEARED: {

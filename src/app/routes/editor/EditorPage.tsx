@@ -23,6 +23,26 @@ interface DragState {
   currentY: number;
 }
 
+interface ImportedWorkflowFile {
+  name?: string;
+  nodes?: Array<{
+    id?: string;
+    type?: string;
+    node_type?: string;
+    config?: Record<string, unknown>;
+    position?: { x?: number; y?: number };
+  }>;
+  edges?: Array<{
+    id?: string;
+    source?: string;
+    target?: string;
+    sourceHandle?: string;
+    targetHandle?: string;
+    source_handle?: string;
+    target_handle?: string;
+  }>;
+}
+
 export function EditorPage() {
   const { params, navigate } = useRouter();
   const urlWorkflowId = params.get('id');
@@ -125,6 +145,7 @@ export function EditorPage() {
 
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [flowState, sendFlowEvent] = useMachine(editorFlowMachine);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const saveGlow = flowState.context.saveGlow;
   const flowError = flowState.context.error;
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -285,6 +306,75 @@ export function EditorPage() {
     [addNode, nodes.length],
   );
 
+  const handleExport = useCallback(() => {
+    const payload = buildWorkflowPayload();
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    const safeName = workflowName.trim().replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-');
+    anchor.href = url;
+    anchor.download = `${safeName || 'workflow'}.workflow.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }, [buildWorkflowPayload, workflowName]);
+
+  const handleImportClick = useCallback(() => {
+    importInputRef.current?.click();
+  }, []);
+
+  const handleImportFile = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as ImportedWorkflowFile;
+      if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
+        throw new Error('Invalid workflow JSON: missing nodes/edges arrays');
+      }
+
+      const importedName = (parsed.name ?? 'Imported Workflow').trim() || 'Imported Workflow';
+
+      const editorNodes = parsed.nodes.map((node, index) => {
+        const nodeType = (node.type ?? node.node_type ?? 'trigger') as NodeType;
+        return {
+          id: node.id ?? `node-imported-${Date.now()}-${index}`,
+          type: 'workflowNode' as const,
+          position: node.position ? { x: node.position.x ?? 0, y: node.position.y ?? 0 } : { x: 0, y: 0 },
+          data: {
+            label: nodeType,
+            nodeType,
+            config: node.config ?? {},
+          },
+        };
+      });
+
+      const editorEdges = parsed.edges
+        .filter((edge) => edge.source && edge.target)
+        .map((edge, index) => ({
+          id: edge.id ?? `edge-imported-${Date.now()}-${index}`,
+          source: edge.source as string,
+          target: edge.target as string,
+          sourceHandle: edge.sourceHandle ?? edge.source_handle ?? undefined,
+          targetHandle: edge.targetHandle ?? edge.target_handle ?? undefined,
+        }));
+
+      suppressGraphDirtyRef.current = true;
+      setGraph(editorNodes, editorEdges);
+      sendDomainEvent({ type: 'WORKFLOW_IMPORTED', name: importedName });
+      navigate('editor');
+      sendFlowEvent({ type: 'CLEAR_ERROR' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to import workflow JSON';
+      sendFlowEvent({ type: 'SAVE_FAILURE', message });
+    } finally {
+      event.target.value = '';
+    }
+  }, [navigate, sendDomainEvent, sendFlowEvent, setGraph]);
+
   // Keyboard shortcuts: Cmd+S for save, Cmd+Enter for execute
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -400,6 +490,30 @@ export function EditorPage() {
           </AnimatePresence>
         </div>
         <div className="flex items-center gap-2">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json,.workflow.json,application/json"
+            className="hidden"
+            onChange={handleImportFile}
+            aria-label="Import workflow JSON"
+          />
+          <button
+            type="button"
+            onClick={handleImportClick}
+            className="px-4 py-1.5 text-sm font-medium bg-bg-elevated text-text-secondary border border-border-primary rounded-lg hover:bg-bg-tertiary hover:text-text-primary hover:border-border-hover transition-all focus:outline-none focus:ring-2 focus:ring-border-focus"
+            aria-label="Import workflow"
+          >
+            Import
+          </button>
+          <button
+            type="button"
+            onClick={handleExport}
+            className="px-4 py-1.5 text-sm font-medium bg-bg-elevated text-text-secondary border border-border-primary rounded-lg hover:bg-bg-tertiary hover:text-text-primary hover:border-border-hover transition-all focus:outline-none focus:ring-2 focus:ring-border-focus"
+            aria-label="Export workflow"
+          >
+            Export
+          </button>
           <motion.button
             type="button"
             onClick={handleSave}
