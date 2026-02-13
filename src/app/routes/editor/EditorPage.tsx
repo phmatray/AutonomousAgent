@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
+import { useRef } from 'react';
 import { WorkflowCanvas } from '@/features/workflow-editor/components/WorkflowCanvas';
 import { NodePalette } from '@/features/workflow-editor/nodes/components/NodePalette';
 import { NodeConfigPanel } from '@/features/workflow-editor/nodes/components/NodeConfigPanel';
@@ -7,6 +8,7 @@ import { useEditorWorkflow } from './hooks/useEditorWorkflow';
 import { useEditorInteractions } from './hooks/useEditorInteractions';
 
 export function EditorPage() {
+  const fileMenuRef = useRef<HTMLDetailsElement>(null);
   const {
     workflowName,
     isWorkflowNameValid,
@@ -41,6 +43,12 @@ export function EditorPage() {
     onSave: handleSave,
     onExecute: handleExecute,
   });
+
+  const closeFileMenu = () => {
+    if (fileMenuRef.current) {
+      fileMenuRef.current.open = false;
+    }
+  };
 
   return (
     <div className="flex flex-col h-full relative min-w-0">
@@ -111,22 +119,35 @@ export function EditorPage() {
             onChange={(event) => void handleImportFile(event)}
             aria-label="Import workflow JSON"
           />
-          <button
-            type="button"
-            onClick={handleImportClick}
-            className="px-4 py-1.5 text-sm font-medium bg-bg-elevated text-text-secondary border border-border-primary rounded-lg hover:bg-bg-tertiary hover:text-text-primary hover:border-border-hover transition-all focus:outline-none focus:ring-2 focus:ring-border-focus"
-            aria-label="Import workflow"
-          >
-            Import
-          </button>
-          <button
-            type="button"
-            onClick={handleExport}
-            className="px-4 py-1.5 text-sm font-medium bg-bg-elevated text-text-secondary border border-border-primary rounded-lg hover:bg-bg-tertiary hover:text-text-primary hover:border-border-hover transition-all focus:outline-none focus:ring-2 focus:ring-border-focus"
-            aria-label="Export workflow"
-          >
-            Export
-          </button>
+          <details ref={fileMenuRef} className="relative">
+            <summary className="list-none px-4 py-1.5 text-sm font-medium bg-bg-elevated text-text-secondary border border-border-primary rounded-lg hover:bg-bg-tertiary hover:text-text-primary hover:border-border-hover transition-all cursor-pointer select-none">
+              File
+            </summary>
+            <div className="absolute right-0 mt-2 w-44 rounded-lg border border-border-primary bg-bg-secondary shadow-node z-20 p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  closeFileMenu();
+                  handleImportClick();
+                }}
+                className="w-full text-left px-3 py-2 text-sm rounded-md text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition-colors"
+                aria-label="Import workflow"
+              >
+                Import JSON
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  closeFileMenu();
+                  handleExport();
+                }}
+                className="w-full text-left px-3 py-2 text-sm rounded-md text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition-colors"
+                aria-label="Export workflow"
+              >
+                Export JSON
+              </button>
+            </div>
+          </details>
           <motion.button
             type="button"
             onClick={() => void handleSave()}

@@ -40,7 +40,7 @@ export function RepositorySelector({
           }
         }}
         disabled={isLoading}
-        className="w-full max-w-md bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+        className="h-10 w-full max-w-md bg-gray-800 border border-gray-700 rounded-lg px-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
         aria-label="Select repository"
       >
         <option value="">

@@ -13,6 +13,7 @@ import { BacklogFilters } from './BacklogFilters';
 import { BacklogTable } from './BacklogTable';
 import { BacklogDetailsPanel } from './BacklogDetailsPanel';
 import { useRouter } from '@/lib/router';
+import { CenteredPage } from '@/app/components/PageLayout';
 
 export function BacklogPage() {
   const { params, navigate } = useRouter();
@@ -97,63 +98,61 @@ export function BacklogPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-6xl mx-auto">
-        <BacklogHeader
-          itemCount={backlogItems.length}
-          isSyncing={syncMutation.isPending}
-          onSync={() => syncMutation.mutate()}
-          syncDisabled={!selectedOwner || !selectedRepo}
+    <CenteredPage width="xl">
+      <BacklogHeader
+        itemCount={backlogItems.length}
+        isSyncing={syncMutation.isPending}
+        onSync={() => syncMutation.mutate()}
+        syncDisabled={!selectedOwner || !selectedRepo}
+      />
+
+      <RepositorySelector
+        repositories={repositories}
+        isLoading={reposLoading}
+        selectedOwner={selectedOwner}
+        selectedRepo={selectedRepo}
+        onSelect={handleRepoSelect}
+      />
+
+      {(selectedOwner && selectedRepo) && (
+        <BacklogFilters
+          stateFilter={stateFilter}
+          onStateFilterChange={setStateFilter}
+          labelFilter={labelFilter}
+          onLabelFilterChange={setLabelFilter}
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          availableLabels={availableLabels}
         />
+      )}
 
-        <RepositorySelector
-          repositories={repositories}
-          isLoading={reposLoading}
-          selectedOwner={selectedOwner}
-          selectedRepo={selectedRepo}
-          onSelect={handleRepoSelect}
-        />
+      {syncMutation.isError && (
+        <div className="mb-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-300" role="alert">
+          Failed to sync issues: {String(syncMutation.error)}
+        </div>
+      )}
 
-        {(selectedOwner && selectedRepo) && (
-          <BacklogFilters
-            stateFilter={stateFilter}
-            onStateFilterChange={setStateFilter}
-            labelFilter={labelFilter}
-            onLabelFilterChange={setLabelFilter}
-            searchQuery={searchQuery}
-            onSearchQueryChange={setSearchQuery}
-            availableLabels={availableLabels}
-          />
-        )}
-
-        {syncMutation.isError && (
-          <div className="mb-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-300" role="alert">
-            Failed to sync issues: {String(syncMutation.error)}
+      {backlogLoading ? (
+        <div className="flex items-center justify-center py-20" role="status" aria-label="Loading backlog">
+          <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <span className="sr-only">Loading backlog...</span>
+        </div>
+      ) : (
+        <div className="flex flex-col lg:flex-row gap-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex-1 min-w-0">
+            <BacklogTable
+              items={backlogItems}
+              selectedItemId={selectedItemId}
+              onViewDetails={openDetails}
+              onDelete={(id) => deleteMutation.mutate(id)}
+              isDeleting={deleteMutation.isPending}
+            />
           </div>
-        )}
-
-        {backlogLoading ? (
-          <div className="flex items-center justify-center py-20" role="status" aria-label="Loading backlog">
-            <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-            <span className="sr-only">Loading backlog...</span>
-          </div>
-        ) : (
-          <div className="flex flex-col lg:flex-row gap-4">
-            <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex-1 min-w-0">
-              <BacklogTable
-                items={backlogItems}
-                selectedItemId={selectedItemId}
-                onViewDetails={openDetails}
-                onDelete={(id) => deleteMutation.mutate(id)}
-                isDeleting={deleteMutation.isPending}
-              />
-            </div>
-            {selectedItem && (
-              <BacklogDetailsPanel item={selectedItem} onClose={closeDetails} />
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+          {selectedItem && (
+            <BacklogDetailsPanel item={selectedItem} onClose={closeDetails} />
+          )}
+        </div>
+      )}
+    </CenteredPage>
   );
 }

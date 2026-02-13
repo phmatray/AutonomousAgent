@@ -27,7 +27,7 @@ export function BacklogFilters({
           id="state-filter"
           value={stateFilter}
           onChange={(e) => onStateFilterChange(e.target.value)}
-          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="h-10 bg-gray-800 border border-gray-700 rounded-lg px-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
           aria-label="Filter by issue state"
         >
           <option value="">All states</option>
@@ -44,7 +44,7 @@ export function BacklogFilters({
           id="label-filter"
           value={labelFilter}
           onChange={(e) => onLabelFilterChange(e.target.value)}
-          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="h-10 bg-gray-800 border border-gray-700 rounded-lg px-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
           aria-label="Filter by label"
         >
           <option value="">All labels</option>
@@ -66,7 +66,7 @@ export function BacklogFilters({
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
           placeholder="Search issues..."
-          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="h-10 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           aria-label="Search issues by title or body"
         />
       </div>

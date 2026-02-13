@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react';
 import type { Workflow } from '@/types/workflow';
 import { useEffect, useMemo, useState } from 'react';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { CenteredPage, PageHeader } from '@/app/components/PageLayout';
 import { useWorkflowCatalogActorRef, WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
 import { executeWorkflow, updateWorkflow } from '@/lib/api/workflow';
 
@@ -161,7 +162,7 @@ function SearchAndSortControls({
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder="Search workflows..."
-          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          className="h-10 w-full px-3 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
         />
       </label>
       <label className="sm:w-56">
@@ -169,7 +170,7 @@ function SearchAndSortControls({
         <select
           value={sortBy}
           onChange={(e) => onSortChange(e.target.value as SortOption)}
-          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          className="h-10 w-full px-3 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
           aria-label="Sort workflows"
         >
           <option value="updated-desc">Most recently updated</option>
@@ -184,22 +185,31 @@ function SearchAndSortControls({
 
 function EmptyState({ onNavigateToEditor }: { onNavigateToEditor: (id?: string) => void }) {
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center mb-4">
-        <span className="text-2xl text-gray-500" aria-hidden="true">+</span>
+    <section className="rounded-xl border border-gray-700 bg-gray-900/70 p-6">
+      <div className="flex items-start gap-4">
+        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-gray-800">
+          <span className="text-xl text-gray-500" aria-hidden="true">+</span>
+        </div>
+        <div className="flex-1">
+          <h3 className="text-lg font-semibold text-white">No workflows yet</h3>
+          <p className="mt-1 text-sm text-gray-300">
+            Create your first autonomous workflow to start automating issue resolution.
+          </p>
+          <ul className="mt-4 space-y-1 text-sm text-gray-300">
+            <li>1. Add a trigger node to start the workflow.</li>
+            <li>2. Connect GitHub and Claude actions.</li>
+            <li>3. Save and run from Monitoring.</li>
+          </ul>
+          <button
+            type="button"
+            onClick={() => onNavigateToEditor()}
+            className="mt-5 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            Create Workflow
+          </button>
+        </div>
       </div>
-      <h3 className="text-lg text-white mb-2">No workflows yet</h3>
-      <p className="text-sm text-gray-400 mb-4 max-w-sm">
-        Create your first autonomous workflow to start automating issue resolution.
-      </p>
-      <button
-        type="button"
-        onClick={() => onNavigateToEditor()}
-        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
-      >
-        Create Workflow
-      </button>
-    </div>
+    </section>
   );
 }
 
@@ -313,20 +323,11 @@ export function DashboardPage() {
   }, [workflows, searchQuery, sortBy]);
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-5xl mx-auto">
-          {(actionError || pageError) && (
-            <div className="mb-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-300" role="alert">
-              {pageError ?? actionError}
-            </div>
-          )}
-          <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-white">Workflows</h1>
-            <p className="text-sm text-gray-400 mt-1">
-              Manage your autonomous development workflows
-            </p>
-          </div>
+    <CenteredPage width="lg">
+      <PageHeader
+        title="Workflows"
+        description="Manage your autonomous development workflows"
+        actions={(
           <button
             type="button"
             onClick={() => navigateToEditor()}
@@ -334,99 +335,105 @@ export function DashboardPage() {
           >
             New Workflow
           </button>
+        )}
+        metadata={!isLoading && !loadError && workflows.length > 0 ? <KpiChips workflows={workflows} /> : null}
+      />
+
+      {(actionError || pageError) && (
+        <div className="mb-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-300" role="alert">
+          {pageError ?? actionError}
         </div>
+      )}
 
-        {isLoading && (
-          <div className="flex items-center justify-center py-20" role="status" aria-label="Loading workflows">
-            <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-            <span className="sr-only">Loading workflows...</span>
-          </div>
-        )}
+      {isLoading && (
+        <div className="flex items-center justify-center py-20" role="status" aria-label="Loading workflows">
+          <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <span className="sr-only">Loading workflows...</span>
+        </div>
+      )}
 
-        {loadError && !isLoading && (
-          <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 text-center">
-            <p className="text-gray-400 mb-2">Could not load workflows</p>
-            <p className="text-xs text-gray-500">
-              Backend services may not be running. The workflow editor is still available.
-            </p>
-            <button
-              type="button"
-              onClick={() => actorRef.send({ type: 'RETRY' })}
-              disabled={isLoading}
-              className="mt-4 mr-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Retrying...' : 'Retry'}
-            </button>
-            <button
-              type="button"
-              onClick={() => navigateToEditor()}
-              className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              Open Editor
-            </button>
-          </div>
-        )}
+      {loadError && !isLoading && (
+        <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 text-center">
+          <p className="text-gray-300 mb-2">Could not load workflows</p>
+          <p className="text-xs text-gray-400">
+            Backend services may not be running. The workflow editor is still available.
+          </p>
+          <button
+            type="button"
+            onClick={() => actorRef.send({ type: 'RETRY' })}
+            disabled={isLoading}
+            className="mt-4 mr-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? 'Retrying...' : 'Retry'}
+          </button>
+          <button
+            type="button"
+            onClick={() => navigateToEditor()}
+            className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            Open Editor
+          </button>
+        </div>
+      )}
 
-        {!isLoading && !loadError && workflows.length === 0 && (
-          <EmptyState onNavigateToEditor={navigateToEditor} />
-        )}
+      {!isLoading && !loadError && workflows.length === 0 && (
+        <EmptyState onNavigateToEditor={navigateToEditor} />
+      )}
 
-        {!isLoading && workflows.length > 0 && (
-          <>
-            <KpiChips workflows={workflows} />
-            <SearchAndSortControls
-              searchQuery={searchQuery}
-              sortBy={sortBy}
-              onSearchChange={setSearchQuery}
-              onSortChange={setSortBy}
-            />
+      {!isLoading && workflows.length > 0 && (
+        <>
+          <SearchAndSortControls
+            searchQuery={searchQuery}
+            sortBy={sortBy}
+            onSearchChange={setSearchQuery}
+            onSortChange={setSortBy}
+          />
 
-            {visibleWorkflows.length === 0 ? (
-              <div className="bg-gray-800 border border-gray-700 rounded-lg p-8 text-center">
-                <p className="text-gray-300">No workflows match your search.</p>
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="mt-3 px-3 py-1.5 bg-gray-700 text-white text-sm rounded hover:bg-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
-                >
-                  Clear Search
-                </button>
-              </div>
-            ) : (
-              <div
-                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-                role="list"
-                aria-label="Workflow list"
+          {visibleWorkflows.length === 0 ? (
+            <div className="bg-gray-800 border border-gray-700 rounded-lg p-8 text-center">
+              <p className="text-gray-300">No workflows match your search.</p>
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="mt-3 px-3 py-1.5 bg-gray-700 text-white text-sm rounded hover:bg-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
               >
-                {visibleWorkflows.map((wf) => (
-                  <div key={wf.id} role="listitem">
-                    <WorkflowCard
-                      workflow={wf}
-                      isUpdatingStatus={statusUpdateWorkflowId === wf.id}
-                      isRunning={runningWorkflowId === wf.id}
-                      onClick={() => navigateToEditor(wf.id)}
-                      onTogglePublish={(e) => void handleTogglePublish(e, wf)}
-                      onRun={(e) => void handleRunWorkflow(e, wf)}
-                      onDelete={(e) => handleDeleteClick(e, wf)}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
+                Clear Search
+              </button>
+            </div>
+          ) : (
+            <div
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+              role="list"
+              aria-label="Workflow list"
+            >
+              {visibleWorkflows.map((wf) => (
+                <div key={wf.id} role="listitem">
+                  <WorkflowCard
+                    workflow={wf}
+                    isUpdatingStatus={statusUpdateWorkflowId === wf.id}
+                    isRunning={runningWorkflowId === wf.id}
+                    onClick={() => navigateToEditor(wf.id)}
+                    onTogglePublish={(e) => void handleTogglePublish(e, wf)}
+                    onRun={(e) => void handleRunWorkflow(e, wf)}
+                    onDelete={(e) => handleDeleteClick(e, wf)}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
-        <ConfirmDialog
-          open={!!workflowToDelete}
-          title="Delete Workflow"
-          message={`Are you sure you want to delete "${workflowToDelete?.name}"? This action cannot be undone.`}
-          confirmLabel="Delete"
-          cancelLabel="Cancel"
-          onConfirm={confirmDelete}
-          onCancel={cancelDelete}
-          confirmDisabled={isDeleting}
-        />
-      </div>
-    </div>
+      <ConfirmDialog
+        open={!!workflowToDelete}
+        title="Delete Workflow"
+        message={`Are you sure you want to delete "${workflowToDelete?.name}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onConfirm={confirmDelete}
+        onCancel={cancelDelete}
+        confirmDisabled={isDeleting}
+      />
+    </CenteredPage>
   );
 }

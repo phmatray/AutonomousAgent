@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { useMachine } from '@xstate/react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -22,6 +23,26 @@ const LOG_LEVEL_STYLES: Record<string, string> = {
   WARN: 'text-yellow-400',
   ERROR: 'text-red-400',
 };
+
+const SIDEBAR_WIDTH_STORAGE_KEY = 'autonomous-agent.monitoring.sidebar-width';
+const SIDEBAR_MIN_WIDTH = 240;
+const SIDEBAR_MAX_WIDTH = 480;
+const SIDEBAR_DEFAULT_WIDTH = 288;
+
+function clampSidebarWidth(width: number): number {
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
+}
+
+function loadSidebarWidth(): number {
+  if (typeof window === 'undefined') return SIDEBAR_DEFAULT_WIDTH;
+  const rawValue = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+  if (!rawValue) return SIDEBAR_DEFAULT_WIDTH;
+
+  const parsedValue = Number.parseInt(rawValue, 10);
+  if (Number.isNaN(parsedValue)) return SIDEBAR_DEFAULT_WIDTH;
+
+  return clampSidebarWidth(parsedValue);
+}
 
 interface ExecutionContextEntry {
   node_id?: string;
@@ -337,6 +358,7 @@ export function MonitoringPage() {
   const { params } = useRouter();
   const requestedExecutionId = params.get('id');
   const [state, send] = useMachine(monitoringMachine);
+  const containerRef = useRef<HTMLDivElement>(null);
   const executions = state.context.executions;
   const selectedExecutionId = state.context.selectedExecutionId;
   const logs = state.context.logs;
@@ -346,6 +368,8 @@ export function MonitoringPage() {
   const cancelError = state.context.cancelError;
   const isLoadingExecutions = state.matches('loadingExecutions');
   const isFetchingExecutions = state.matches('refreshingExecutions');
+  const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
+  const [isResizing, setIsResizing] = useState(false);
 
   useEffect(() => {
     send({ type: 'REQUESTED_EXECUTION_CHANGED', executionId: requestedExecutionId });
@@ -399,10 +423,52 @@ export function MonitoringPage() {
     }
   };
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!containerRef.current) return;
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const nextWidth = clampSidebarWidth(event.clientX - containerRect.left);
+      setSidebarWidth(nextWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
+  const startResizing = () => {
+    setIsResizing(true);
+  };
+
+  const handleResizeKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const delta = event.key === 'ArrowLeft' ? -16 : 16;
+    setSidebarWidth((currentWidth) => clampSidebarWidth(currentWidth + delta));
+  };
+
   return (
-    <div className="flex h-full">
+    <div ref={containerRef} className="flex h-full">
       <aside
-        className="w-72 bg-gray-900 border-r border-gray-700 flex flex-col"
+        className="bg-gray-900 border-r border-gray-700 flex flex-col shrink-0"
+        style={{ width: `${sidebarWidth}px` }}
         aria-label="Execution list"
       >
         <div className="p-4 border-b border-gray-700">
@@ -446,6 +512,18 @@ export function MonitoringPage() {
           ))}
         </div>
       </aside>
+      <div
+        className={`w-1 border-r border-gray-700 bg-gray-900/40 hover:bg-indigo-700/40 transition-colors ${isResizing ? 'bg-indigo-700/50' : ''}`}
+        role="separator"
+        aria-label="Resize execution list panel"
+        aria-orientation="vertical"
+        aria-valuemin={SIDEBAR_MIN_WIDTH}
+        aria-valuemax={SIDEBAR_MAX_WIDTH}
+        aria-valuenow={sidebarWidth}
+        tabIndex={0}
+        onMouseDown={startResizing}
+        onKeyDown={handleResizeKeyDown}
+      />
 
       <main className="flex-1 flex flex-col bg-gray-950">
         {selectedExecutionId ? (

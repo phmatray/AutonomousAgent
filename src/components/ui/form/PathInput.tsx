@@ -72,7 +72,7 @@ export function PathInput({
             placeholder={placeholder}
             disabled={disabled}
             className={`
-              w-full rounded-md pl-9 pr-3 py-2 text-sm text-text-primary font-technical
+              h-10 w-full rounded-md pl-9 pr-3 text-sm text-text-primary font-technical
               bg-bg-tertiary border transition-colors
               placeholder:text-text-tertiary
               focus:outline-none focus:ring-2 focus:ring-border-focus/50 focus:border-border-focus
