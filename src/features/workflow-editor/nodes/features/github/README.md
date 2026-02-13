@@ -10,6 +10,7 @@ Related editor files:
 
 - `src/features/workflow-editor/nodes/features/index.ts`
 - `src/features/workflow-editor/nodes/features/github/nodes.ts`
+- `src/features/workflow-editor/nodes/features/github/hooks/useGitHubCredentialOptions.ts`
 - `src/features/workflow-editor/nodes/components/NodePalette.tsx`
 - `src/features/workflow-editor/nodes/components/WorkflowNodeComponent.tsx`
 - `src/features/workflow-editor/nodes/components/NodeConfigPanel.tsx`

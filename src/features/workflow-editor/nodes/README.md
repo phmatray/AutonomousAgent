@@ -18,6 +18,10 @@ This folder owns the editor-side node feature.
 - `src/features/workflow-editor/nodes/components/NodePalette.tsx`
 - `src/features/workflow-editor/nodes/components/WorkflowNodeComponent.tsx`
 - `src/features/workflow-editor/nodes/components/NodeConfigPanel.tsx`
+- `src/features/workflow-editor/nodes/components/node-config/DynamicField.tsx`
+- `src/features/workflow-editor/nodes/components/node-config/RawJsonEditor.tsx`
+- `src/features/workflow-editor/nodes/components/node-config/ValidationSummary.tsx`
+- `src/features/workflow-editor/nodes/components/node-config/NodeTypeIcon.tsx`
 - `src/features/workflow-editor/nodes/components/__tests__/NodePalette.test.tsx`
 - `src/features/workflow-editor/nodes/components/__tests__/NodeConfigPanel.test.tsx`
 
