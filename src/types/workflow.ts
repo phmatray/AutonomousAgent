@@ -1,0 +1,99 @@
+// Workflow type definitions
+
+export type NodeType =
+  | 'github.sync'
+  | 'github.readIssues'
+  | 'github.createPR'
+  | 'git.worktree'
+  | 'git.branch'
+  | 'git.commit'
+  | 'claude.analyze'
+  | 'claude.plan'
+  | 'claude.apply'
+  | 'trigger'
+  | 'condition'
+  | 'loop'
+  | 'delay';
+
+export type ExecutionStatus =
+  | 'IDLE'
+  | 'SCHEDULED'
+  | 'RUNNING'
+  | 'PAUSED'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED';
+
+export interface WorkflowNode {
+  id: string;
+  type: NodeType;
+  config?: Record<string, any>;
+  inputs?: Record<string, any>;
+  position?: { x: number; y: number };
+}
+
+export interface WorkflowEdge {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+}
+
+export interface WorkflowSettings {
+  timeout?: number;
+  retryPolicy?: {
+    maxAttempts: number;
+    backoff: 'linear' | 'exponential';
+    delay: number;
+  };
+  errorHandling?: 'stop' | 'continue' | 'retry';
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description?: string;
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  config?: Record<string, any>;
+  settings?: WorkflowSettings;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowExecution {
+  id: string;
+  workflowId: string;
+  status: ExecutionStatus;
+  triggerType?: string;
+  startedAt?: string;
+  completedAt?: string;
+  error?: any;
+  context?: Record<string, any>;
+  currentNodeId?: string;
+}
+
+export interface NodeExecution {
+  id: string;
+  executionId: string;
+  nodeId: string;
+  status: ExecutionStatus;
+  input?: any;
+  output?: any;
+  error?: any;
+  startedAt?: string;
+  completedAt?: string;
+  retryCount: number;
+}
+
+export interface ExecutionLog {
+  id: number;
+  executionId: string;
+  nodeId?: string;
+  level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+  message: string;
+  metadata?: Record<string, any>;
+  timestamp: string;
+}
