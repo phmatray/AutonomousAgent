@@ -90,6 +90,7 @@ export function EditorPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const executeInFlightRef = useRef(false);
+  const isWorkflowNameValid = workflowName.trim().length > 0;
 
   const buildWorkflowPayload = useCallback(
     (): Workflow => ({
@@ -169,18 +170,23 @@ export function EditorPage() {
       }
     },
   });
+  const canSave = isDirty && isWorkflowNameValid && !saveWorkflowMutation.isPending;
 
   const handleSave = useCallback(() => {
+    if (!isWorkflowNameValid) {
+      setSaveError('Workflow name is required');
+      return;
+    }
     if (!saveWorkflowMutation.isPending) {
       saveWorkflowMutation.mutate();
     }
-  }, [saveWorkflowMutation]);
+  }, [isWorkflowNameValid, saveWorkflowMutation]);
 
   const handleExecute = useCallback(() => {
-    if (executeInFlightRef.current) return;
+    if (!isWorkflowNameValid || saveWorkflowMutation.isPending || executeInFlightRef.current) return;
     executeInFlightRef.current = true;
     executeWorkflowMutation.mutate();
-  }, [executeWorkflowMutation]);
+  }, [isWorkflowNameValid, saveWorkflowMutation.isPending, executeWorkflowMutation]);
 
   const handleDragStart = useCallback((type: NodeType, startX: number, startY: number) => {
     setDragState({
@@ -284,7 +290,13 @@ export function EditorPage() {
             onChange={(e) => setWorkflowName(e.target.value)}
             className="bg-transparent border border-transparent text-text-primary text-lg font-display font-semibold rounded px-2 py-1 hover:border-border-primary focus:outline-none focus:ring-2 focus:ring-border-focus transition-colors"
             aria-label="Workflow name"
+            aria-invalid={!isWorkflowNameValid}
           />
+          {!isWorkflowNameValid && (
+            <span className="text-xs text-state-error" role="alert">
+              Workflow name is required
+            </span>
+          )}
           <AnimatePresence>
             {isDirty && (
               <motion.span
@@ -304,7 +316,7 @@ export function EditorPage() {
           <motion.button
             type="button"
             onClick={handleSave}
-            disabled={saveWorkflowMutation.isPending}
+            disabled={!canSave}
             animate={saveGlow ? {
               boxShadow: [
                 '0 0 0px rgba(99, 102, 241, 0)',
@@ -336,7 +348,7 @@ export function EditorPage() {
           <motion.button
             type="button"
             onClick={handleExecute}
-            disabled={executeWorkflowMutation.isPending}
+            disabled={!isWorkflowNameValid || saveWorkflowMutation.isPending || executeWorkflowMutation.isPending}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.97 }}
             className="px-4 py-1.5 text-sm font-medium bg-control text-white rounded-lg hover:bg-control-hover hover:shadow-glow-lg transition-all focus:outline-none focus:ring-2 focus:ring-border-focus disabled:opacity-50 disabled:cursor-not-allowed"

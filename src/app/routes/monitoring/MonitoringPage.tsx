@@ -122,7 +122,12 @@ export function MonitoringPage() {
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [streamingLogs, setStreamingLogs] = useState<ExecutionLog[]>([]);
 
-  const { data: executions, error: executionsError } = useQuery<WorkflowExecution[]>({
+  const {
+    data: executions,
+    error: executionsError,
+    refetch: refetchExecutions,
+    isFetching: isFetchingExecutions,
+  } = useQuery<WorkflowExecution[]>({
     queryKey: ['executions'],
     queryFn: () => listExecutions(),
     refetchInterval: 3000,
@@ -191,7 +196,15 @@ export function MonitoringPage() {
         </div>
         {executionsError && (
           <div className="mx-3 mt-3 p-2.5 rounded border border-red-800 bg-red-900/25 text-xs text-red-300" role="alert">
-            Could not load executions
+            <p>Could not load executions</p>
+            <button
+              type="button"
+              onClick={() => refetchExecutions()}
+              disabled={isFetchingExecutions}
+              className="mt-2 px-2.5 py-1 rounded bg-red-800/70 text-red-100 hover:bg-red-700/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isFetchingExecutions ? 'Retrying...' : 'Retry'}
+            </button>
           </div>
         )}
         <div className="flex-1 overflow-y-auto p-3 space-y-2" role="list" aria-label="Workflow executions">
