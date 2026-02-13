@@ -2,10 +2,11 @@ import { useRouter } from '@/lib/router';
 import { Clock3, PlayCircle, Trash2 } from 'lucide-react';
 import type { Workflow } from '@/types/workflow';
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { CenteredPage, PageHeader } from '@/app/components/PageLayout';
 import { useWorkflowCatalogActorRef, WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
-import { executeWorkflow, updateWorkflow } from '@/lib/api/workflow';
+import { executeWorkflow, listExecutions, updateWorkflow } from '@/lib/api/workflow';
 import { Badge, Button, Input, SectionCard } from '@/components/ui/primitives';
 
 type SortOption = 'updated-desc' | 'name-asc' | 'name-desc' | 'nodes-desc';
@@ -307,6 +308,90 @@ function KpiChips({ workflows }: { workflows: Workflow[] }) {
   );
 }
 
+function formatExecutionTimestamp(value?: string): string {
+  if (!value) return 'n/a';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+function ExecutionHealthCard({ executions }: { executions: Awaited<ReturnType<typeof listExecutions>> }) {
+  const summary = useMemo(() => {
+    const now = Date.now();
+    const dayAgo = now - 24 * 60 * 60 * 1000;
+    const withTimestamps = executions
+      .map((execution) => ({
+        execution,
+        timestamp: new Date(
+          execution.startedAt
+            ?? execution.completedAt
+            ?? '',
+        ).getTime(),
+      }))
+      .filter(({ timestamp }) => Number.isFinite(timestamp));
+
+    const sorted = withTimestamps.sort((left, right) => right.timestamp - left.timestamp);
+    const latest = sorted[0]?.execution;
+    const failures24h = sorted.filter(({ execution, timestamp }) =>
+      execution.status === 'FAILED' && timestamp >= dayAgo).length;
+    const runningCount = executions.filter((execution) => execution.status === 'RUNNING').length;
+    const completedCount = executions.filter((execution) => execution.status === 'COMPLETED').length;
+    const failedCount = executions.filter((execution) => execution.status === 'FAILED').length;
+
+    let successStreak = 0;
+    for (const { execution } of sorted) {
+      if (execution.status === 'COMPLETED') {
+        successStreak += 1;
+        continue;
+      }
+      if (execution.status === 'FAILED' || execution.status === 'CANCELLED') {
+        break;
+      }
+    }
+
+    return {
+      total: executions.length,
+      failures24h,
+      runningCount,
+      completedCount,
+      failedCount,
+      successStreak,
+      latestStartedAt: latest?.startedAt ?? latest?.completedAt,
+    };
+  }, [executions]);
+
+  return (
+    <SectionCard className="mb-4 p-4" aria-label="Execution health">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-white">Execution Health</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Last run: {formatExecutionTimestamp(summary.latestStartedAt)}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge tone={summary.failures24h > 0 ? 'danger' : 'success'}>
+            24h failures {summary.failures24h}
+          </Badge>
+          <Badge tone={summary.runningCount > 0 ? 'info' : 'default'}>
+            Running {summary.runningCount}
+          </Badge>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Badge>Executions {summary.total}</Badge>
+        <Badge tone="success">Completed {summary.completedCount}</Badge>
+        <Badge tone={summary.failedCount > 0 ? 'danger' : 'default'}>
+          Failed {summary.failedCount}
+        </Badge>
+        <Badge tone={summary.successStreak > 0 ? 'success' : 'default'}>
+          Success streak {summary.successStreak}
+        </Badge>
+      </div>
+    </SectionCard>
+  );
+}
+
 function SearchAndSortControls({
   searchQuery,
   sortBy,
@@ -412,7 +497,7 @@ function EmptyState({
 export function DashboardPage() {
   const { navigate } = useRouter();
   const actorRef = useWorkflowCatalogActorRef();
-  const workflows = WorkflowCatalogContext.useSelector((state) => state.context.workflows);
+  const workflows = WorkflowCatalogContext.useSelector((state) => state.context.workflows) ?? [];
   const loadError = WorkflowCatalogContext.useSelector((state) => state.context.loadError);
   const actionError = WorkflowCatalogContext.useSelector((state) => state.context.actionError);
   const pendingDeleteId = WorkflowCatalogContext.useSelector((state) => state.context.pendingDeleteId);
@@ -423,6 +508,17 @@ export function DashboardPage() {
   const [statusUpdateWorkflowId, setStatusUpdateWorkflowId] = useState<string | null>(null);
   const [runningWorkflowId, setRunningWorkflowId] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
+  const {
+    data: executionHealthData = [],
+    isLoading: isExecutionHealthLoading,
+    isError: isExecutionHealthError,
+  } = useQuery({
+    queryKey: ['dashboard-execution-health'],
+    queryFn: async () => (await listExecutions()) ?? [],
+    enabled: !isLoading && !loadError,
+    retry: false,
+    refetchInterval: 30_000,
+  });
 
   useEffect(() => {
     actorRef.send({ type: 'REFRESH' });
@@ -537,6 +633,16 @@ export function DashboardPage() {
         <div className="mb-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-300" role="alert">
           {pageError ?? actionError}
         </div>
+      )}
+
+      {!isLoading && !loadError && !isExecutionHealthLoading && (
+        isExecutionHealthError ? (
+          <div className="mb-4 rounded-lg border border-amber-700/50 bg-amber-900/20 px-3 py-2 text-xs text-amber-200">
+            Execution health is temporarily unavailable.
+          </div>
+        ) : (
+          <ExecutionHealthCard executions={executionHealthData} />
+        )
       )}
 
       {isLoading && (
