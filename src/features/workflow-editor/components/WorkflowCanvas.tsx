@@ -30,9 +30,11 @@ interface DragState {
 
 interface WorkflowCanvasProps {
   dragState: DragState | null;
+  focusNodeId?: string | null;
+  focusRequestToken?: number;
 }
 
-export function WorkflowCanvas({ dragState }: WorkflowCanvasProps) {
+export function WorkflowCanvas({ dragState, focusNodeId = null, focusRequestToken = 0 }: WorkflowCanvasProps) {
   const reactFlowRef = useRef<ReactFlowInstance<WorkflowNode> | null>(null);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const nodes = useEditorStore((s) => s.nodes);
@@ -82,6 +84,19 @@ export function WorkflowCanvas({ dragState }: WorkflowCanvasProps) {
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
   }, [setSelectedNode]);
+
+  useEffect(() => {
+    if (!focusNodeId || !reactFlowRef.current) return;
+    const node = nodes.find((item) => item.id === focusNodeId);
+    if (!node) return;
+
+    const currentZoom = reactFlowRef.current.getZoom();
+    reactFlowRef.current.setCenter(
+      node.position.x + 120,
+      node.position.y + 48,
+      { duration: 220, zoom: Math.max(currentZoom, 0.85) },
+    );
+  }, [focusNodeId, focusRequestToken, nodes]);
 
   const handleMouseUp = useCallback(
     (event: React.MouseEvent) => {

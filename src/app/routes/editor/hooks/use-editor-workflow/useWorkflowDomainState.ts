@@ -21,6 +21,7 @@ export function useWorkflowDomainState(): UseWorkflowDomainStateResult {
   const pendingDeleteNodeId = useEditorStore((s) => s.pendingDeleteNodeId);
   const confirmDelete = useEditorStore((s) => s.confirmDelete);
   const cancelDelete = useEditorStore((s) => s.cancelDelete);
+  const setSelectedNode = useEditorStore((s) => s.setSelectedNode);
   const setGraph = useEditorStore((s) => s.setGraph);
   const clearGraph = useEditorStore((s) => s.clearGraph);
   const nodes = useEditorStore((s) => s.nodes);
@@ -48,9 +49,10 @@ export function useWorkflowDomainState(): UseWorkflowDomainStateResult {
       clearGraph,
       confirmDelete,
       cancelDelete,
+      setSelectedNode,
       sendDomainEvent: dispatchDomainEvent,
     }),
-    [setGraph, clearGraph, confirmDelete, cancelDelete, dispatchDomainEvent],
+    [setGraph, clearGraph, confirmDelete, cancelDelete, setSelectedNode, dispatchDomainEvent],
   );
 
   return {

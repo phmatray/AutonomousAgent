@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { WorkflowCanvas } from '@/features/workflow-editor/components/WorkflowCanvas';
 import { NodePalette } from '@/features/workflow-editor/nodes/components/NodePalette';
 import { NodeConfigPanel } from '@/features/workflow-editor/nodes/components/NodeConfigPanel';
@@ -23,8 +23,10 @@ export function EditorPage() {
     isSaving,
     isExecuting,
     isBusy,
+    lastSavedAt,
     importInputRef,
     setWorkflowName,
+    focusNode,
     dismissPreflightIssues,
     confirmDelete,
     cancelDelete,
@@ -50,6 +52,50 @@ export function EditorPage() {
     }
   };
 
+  const [focusRequest, setFocusRequest] = useState<{ nodeId: string; token: number } | null>(null);
+  const workflowStatusTone = useMemo(() => {
+    if (isExecuting) {
+      return {
+        label: 'Running',
+        dot: 'bg-state-running',
+        pulse: 'bg-state-running',
+        text: 'text-state-running',
+      };
+    }
+    if (isSaving) {
+      return {
+        label: 'Saving',
+        dot: 'bg-state-scheduled',
+        pulse: 'bg-state-scheduled',
+        text: 'text-state-scheduled',
+      };
+    }
+    if (isDirty) {
+      return {
+        label: 'Unsaved',
+        dot: 'bg-state-warning',
+        pulse: 'bg-state-warning',
+        text: 'text-state-warning',
+      };
+    }
+    return {
+      label: 'Saved',
+      dot: 'bg-state-success',
+      pulse: 'bg-state-success',
+      text: 'text-state-success',
+    };
+  }, [isDirty, isExecuting, isSaving]);
+
+  const lastSavedLabel = useMemo(() => {
+    if (!lastSavedAt) return 'Not saved yet';
+    return `Saved ${new Date(lastSavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  }, [lastSavedAt]);
+
+  const handleFocusIssue = (nodeId: string) => {
+    focusNode(nodeId);
+    setFocusRequest({ nodeId, token: Date.now() });
+  };
+
   return (
     <div className="flex flex-col h-full relative min-w-0">
       <AnimatePresence>
@@ -73,11 +119,12 @@ export function EditorPage() {
         <div className="flex items-center gap-3">
           <span
             className="relative flex h-2.5 w-2.5"
-            aria-label="Workflow status: idle"
+            aria-label={`Workflow status: ${workflowStatusTone.label.toLowerCase()}`}
           >
-            <span className="animate-pulse-slow absolute inline-flex h-full w-full rounded-full bg-state-idle opacity-75" />
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-state-idle" />
+            <span className={`animate-pulse-slow absolute inline-flex h-full w-full rounded-full ${workflowStatusTone.pulse} opacity-75`} />
+            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${workflowStatusTone.dot}`} />
           </span>
+          <span className={`text-xs font-technical ${workflowStatusTone.text}`}>{workflowStatusTone.label}</span>
           <label htmlFor="workflow-name" className="sr-only">
             Workflow name
           </label>
@@ -109,6 +156,7 @@ export function EditorPage() {
               </motion.span>
             )}
           </AnimatePresence>
+          <span className="text-xs text-text-tertiary" aria-live="polite">{lastSavedLabel}</span>
         </div>
         <div className="flex items-center gap-2">
           <input
@@ -217,10 +265,25 @@ export function EditorPage() {
                     : 'border-state-warning/40 bg-state-warning/10 text-state-warning'
                 }`}
               >
-                <span className="font-mono mr-2">{issue.code}</span>
-                {issue.nodeId ? <span className="font-mono mr-2">[{issue.nodeId}]</span> : null}
-                <span>{issue.message}</span>
-                {issue.hint ? <span className="ml-2 opacity-80">Hint: {issue.hint}</span> : null}
+                {issue.nodeId ? (
+                  <button
+                    type="button"
+                    onClick={() => handleFocusIssue(issue.nodeId!)}
+                    className="w-full text-left hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-border-focus rounded-sm"
+                    title="Jump to node"
+                  >
+                    <span className="font-mono mr-2">{issue.code}</span>
+                    <span className="font-mono mr-2">[{issue.nodeId}]</span>
+                    <span>{issue.message}</span>
+                    {issue.hint ? <span className="ml-2 opacity-80">Hint: {issue.hint}</span> : null}
+                  </button>
+                ) : (
+                  <>
+                    <span className="font-mono mr-2">{issue.code}</span>
+                    <span>{issue.message}</span>
+                    {issue.hint ? <span className="ml-2 opacity-80">Hint: {issue.hint}</span> : null}
+                  </>
+                )}
               </li>
             ))}
           </ul>
@@ -228,7 +291,11 @@ export function EditorPage() {
       )}
       <div className="flex flex-1 overflow-hidden flex-col md:flex-row min-w-0">
         <NodePalette onDragStart={handleDragStart} onQuickAdd={handleQuickAddNode} />
-        <WorkflowCanvas dragState={dragState} />
+        <WorkflowCanvas
+          dragState={dragState}
+          focusNodeId={focusRequest?.nodeId}
+          focusRequestToken={focusRequest?.token ?? 0}
+        />
         <AnimatePresence>
           {selectedNodeId && (
             <motion.div

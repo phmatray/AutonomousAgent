@@ -26,6 +26,7 @@ export interface WorkflowDomainControls {
   clearGraph: () => void;
   confirmDelete: () => void;
   cancelDelete: () => void;
+  setSelectedNode: (id: string | null) => void;
   sendDomainEvent: (event: EditorDomainEvent) => void;
 }
 
