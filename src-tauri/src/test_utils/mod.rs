@@ -399,6 +399,7 @@ pub fn create_test_workflow(
         nodes,
         edges,
         config: None,
+        schedule: None,
         version: 1,
         created_at: now.clone(),
         updated_at: now,

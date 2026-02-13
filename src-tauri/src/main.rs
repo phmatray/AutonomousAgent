@@ -106,6 +106,7 @@ fn main() {
             commands::github::get_auth_status,
             commands::github::get_saved_github_token,
             commands::github::delete_github_token,
+            commands::github::delete_github_credential,
             commands::github::verify_github_token,
             commands::github::list_credential_audit_events,
             // Claude commands

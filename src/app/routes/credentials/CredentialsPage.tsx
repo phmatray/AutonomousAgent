@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   authenticateGitHub,
+  deleteGitHubCredential,
   deleteGitHubToken,
   getAuthStatus,
   getSavedGitHubToken,
+  listGitHubCredentials,
   listCredentialAuditEvents,
   type CredentialAuditEvent,
+  type GitHubCredential,
   verifyGitHubToken,
 } from '@/lib/api/github';
 import {
@@ -52,11 +55,41 @@ function toAuditActionLabel(event: CredentialAuditEvent): string {
   const actionMap: Record<string, string> = {
     save_token: 'Saved token',
     delete_token: 'Removed token',
+    delete_credential: 'Removed credential',
     verify_reveal: 'Verified reveal',
     save_credential: 'Saved credential',
   };
 
   return actionMap[event.action] ?? event.action;
+}
+
+function triggerCredentialAuditDownload(events: CredentialAuditEvent[], filters: Record<string, string>) {
+  if (typeof document === 'undefined') return;
+
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  const fileName = `credential-audit-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.json`;
+
+  const payload = JSON.stringify(
+    {
+      exported_at: now.toISOString(),
+      filters,
+      events,
+    },
+    null,
+    2,
+  );
+
+  const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
 }
 
 export function CredentialsPage() {
@@ -74,9 +107,14 @@ export function CredentialsPage() {
   const [isDeletingGithub, setIsDeletingGithub] = useState(false);
   const [githubDeleteState, setGithubDeleteState] = useState<SaveState>('idle');
   const [showDeleteGitHubDialog, setShowDeleteGitHubDialog] = useState(false);
+  const [showDeleteCredentialDialog, setShowDeleteCredentialDialog] = useState(false);
+  const [selectedCredentialForDelete, setSelectedCredentialForDelete] = useState<GitHubCredential | null>(null);
   const [requiresGithubRevealVerification, setRequiresGithubRevealVerification] = useState(false);
   const [isVerifyingGithubReveal, setIsVerifyingGithubReveal] = useState(false);
   const [githubRevealState, setGithubRevealState] = useState<SaveState>('idle');
+  const [githubCredentials, setGithubCredentials] = useState<GitHubCredential[]>([]);
+  const [githubCredentialsError, setGithubCredentialsError] = useState(false);
+  const [isRefreshingGitHubCredentials, setIsRefreshingGitHubCredentials] = useState(false);
 
   const [claudeStatus, setClaudeStatus] = useState<ClaudeCredentialStatus | null>(null);
   const [claudeStatusError, setClaudeStatusError] = useState(false);
@@ -91,6 +129,9 @@ export function CredentialsPage() {
   const [credentialAuditEvents, setCredentialAuditEvents] = useState<CredentialAuditEvent[]>([]);
   const [credentialAuditError, setCredentialAuditError] = useState(false);
   const [isRefreshingCredentialAudit, setIsRefreshingCredentialAudit] = useState(false);
+  const [auditProviderFilter, setAuditProviderFilter] = useState('all');
+  const [auditActionFilter, setAuditActionFilter] = useState('all');
+  const [auditResultFilter, setAuditResultFilter] = useState('all');
 
   const refreshGitHubStatus = useCallback(async () => {
     setIsRefreshingGithub(true);
@@ -115,6 +156,19 @@ export function CredentialsPage() {
       setCredentialAuditError(true);
     } finally {
       setIsRefreshingCredentialAudit(false);
+    }
+  }, []);
+
+  const refreshGitHubCredentials = useCallback(async () => {
+    setIsRefreshingGitHubCredentials(true);
+    try {
+      const credentials = await listGitHubCredentials();
+      setGithubCredentials(credentials);
+      setGithubCredentialsError(false);
+    } catch {
+      setGithubCredentialsError(true);
+    } finally {
+      setIsRefreshingGitHubCredentials(false);
     }
   }, []);
 
@@ -152,8 +206,13 @@ export function CredentialsPage() {
   }, [isGithubTokenAutofillEnabled]);
 
   useEffect(() => {
-    void Promise.all([refreshGitHubStatus(), refreshClaudeStatus(), refreshCredentialAudit()]);
-  }, [refreshGitHubStatus, refreshClaudeStatus, refreshCredentialAudit]);
+    void Promise.all([
+      refreshGitHubStatus(),
+      refreshClaudeStatus(),
+      refreshCredentialAudit(),
+      refreshGitHubCredentials(),
+    ]);
+  }, [refreshGitHubStatus, refreshClaudeStatus, refreshCredentialAudit, refreshGitHubCredentials]);
 
   useEffect(() => {
     void restoreGitHubToken();
@@ -198,7 +257,11 @@ export function CredentialsPage() {
       setRequiresGithubRevealVerification(false);
       setShowGithubToken(false);
       setGithubSaveState('success');
-      await Promise.all([refreshGitHubStatus(), refreshCredentialAudit()]);
+      await Promise.all([
+        refreshGitHubStatus(),
+        refreshCredentialAudit(),
+        refreshGitHubCredentials(),
+      ]);
     } catch {
       setGithubSaveState('error');
     } finally {
@@ -234,7 +297,11 @@ export function CredentialsPage() {
       setRequiresGithubRevealVerification(false);
       setShowGithubToken(true);
       setGithubRevealState('success');
-      await Promise.all([refreshGitHubStatus(), refreshCredentialAudit()]);
+      await Promise.all([
+        refreshGitHubStatus(),
+        refreshCredentialAudit(),
+        refreshGitHubCredentials(),
+      ]);
     } catch {
       setShowGithubToken(false);
       setGithubRevealState('error');
@@ -266,12 +333,49 @@ export function CredentialsPage() {
       setGithubRevealState('idle');
       setGithubSaveState('idle');
       setGithubDeleteState('success');
-      await Promise.all([refreshGitHubStatus(), refreshCredentialAudit()]);
+      await Promise.all([
+        refreshGitHubStatus(),
+        refreshCredentialAudit(),
+        refreshGitHubCredentials(),
+      ]);
     } catch {
       setGithubDeleteState('error');
     } finally {
       setIsDeletingGithub(false);
       setShowDeleteGitHubDialog(false);
+    }
+  };
+
+  const requestDeleteGitHubCredential = (credential: GitHubCredential) => {
+    setSelectedCredentialForDelete(credential);
+    setShowDeleteCredentialDialog(true);
+  };
+
+  const confirmDeleteGitHubCredential = async () => {
+    if (!selectedCredentialForDelete) return;
+
+    setIsDeletingGithub(true);
+    setGithubDeleteState('idle');
+
+    try {
+      await deleteGitHubCredential(selectedCredentialForDelete.id);
+      setGithubToken('');
+      setShowGithubToken(false);
+      setRequiresGithubRevealVerification(false);
+      setGithubRevealState('idle');
+      setGithubDeleteState('success');
+      await Promise.all([
+        refreshGitHubStatus(),
+        refreshCredentialAudit(),
+        refreshGitHubCredentials(),
+        restoreGitHubToken(),
+      ]);
+    } catch {
+      setGithubDeleteState('error');
+    } finally {
+      setIsDeletingGithub(false);
+      setShowDeleteCredentialDialog(false);
+      setSelectedCredentialForDelete(null);
     }
   };
 
@@ -299,6 +403,44 @@ export function CredentialsPage() {
     } finally {
       setIsSavingClaude(false);
     }
+  };
+
+  const auditProviderOptions = useMemo(() => {
+    return Array.from(
+      new Set(credentialAuditEvents.map((event) => event.provider)),
+    ).sort((a, b) => a.localeCompare(b));
+  }, [credentialAuditEvents]);
+
+  const auditActionOptions = useMemo(() => {
+    return Array.from(
+      new Set(credentialAuditEvents.map((event) => event.action)),
+    ).sort((a, b) => a.localeCompare(b));
+  }, [credentialAuditEvents]);
+
+  const filteredCredentialAuditEvents = useMemo(() => {
+    return credentialAuditEvents.filter((event) => {
+      if (auditProviderFilter !== 'all' && event.provider !== auditProviderFilter) {
+        return false;
+      }
+      if (auditActionFilter !== 'all' && event.action !== auditActionFilter) {
+        return false;
+      }
+      if (auditResultFilter === 'success' && !event.success) {
+        return false;
+      }
+      if (auditResultFilter === 'failure' && event.success) {
+        return false;
+      }
+      return true;
+    });
+  }, [credentialAuditEvents, auditProviderFilter, auditActionFilter, auditResultFilter]);
+
+  const exportFilteredCredentialAudit = () => {
+    triggerCredentialAuditDownload(filteredCredentialAuditEvents, {
+      provider: auditProviderFilter,
+      action: auditActionFilter,
+      result: auditResultFilter,
+    });
   };
 
   return (
@@ -434,16 +576,58 @@ export function CredentialsPage() {
             ) : null}
             {githubDeleteState === 'success' ? (
               <span className="text-sm text-green-400" role="status" aria-live="polite">
-                GitHub token removed
+                GitHub credential removed
               </span>
             ) : null}
             {githubDeleteState === 'error' ? (
               <span className="text-sm text-red-400" role="alert">
-                Failed to remove GitHub token
+                Failed to remove GitHub credential
               </span>
             ) : null}
           </div>
         </form>
+
+        <div className="mt-6 border-t border-gray-700 pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-200">Saved Credential Profiles</h3>
+            <button
+              type="button"
+              onClick={() => void refreshGitHubCredentials()}
+              disabled={isRefreshingGitHubCredentials}
+              className="px-2.5 py-1 text-xs bg-gray-700 text-gray-100 rounded hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isRefreshingGitHubCredentials ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
+
+          {githubCredentialsError ? (
+            <p className="text-sm text-red-400">Could not load saved GitHub credentials.</p>
+          ) : githubCredentials.length === 0 ? (
+            <p className="text-sm text-gray-400">No saved GitHub credentials.</p>
+          ) : (
+            <ul className="space-y-2" aria-label="Saved GitHub credentials">
+              {githubCredentials.map((credential) => (
+                <li key={credential.id} className="flex items-center justify-between gap-3 rounded border border-gray-700 bg-gray-900/40 px-3 py-2">
+                  <div>
+                    <p className="text-sm text-gray-100">
+                      {credential.label}
+                      {credential.is_default ? ' (Default)' : ''}
+                    </p>
+                    <p className="text-xs text-gray-500 font-mono">{credential.id}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => requestDeleteGitHubCredential(credential)}
+                    disabled={isDeletingGithub || credential.id === '__active_session__'}
+                    className="px-2.5 py-1 text-xs bg-gray-700 text-gray-100 rounded hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Remove Profile
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
 
       <section className="bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6" aria-labelledby="credential-audit-heading">
@@ -451,14 +635,24 @@ export function CredentialsPage() {
           <h2 id="credential-audit-heading" className="text-lg font-semibold text-white">
             Credential Activity
           </h2>
-          <button
-            type="button"
-            onClick={() => void refreshCredentialAudit()}
-            disabled={isRefreshingCredentialAudit}
-            className="px-3 py-1.5 text-xs bg-gray-700 text-gray-100 rounded hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isRefreshingCredentialAudit ? 'Refreshing...' : 'Refresh'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={exportFilteredCredentialAudit}
+              disabled={filteredCredentialAuditEvents.length === 0}
+              className="px-3 py-1.5 text-xs bg-gray-700 text-gray-100 rounded hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Export JSON
+            </button>
+            <button
+              type="button"
+              onClick={() => void refreshCredentialAudit()}
+              disabled={isRefreshingCredentialAudit}
+              className="px-3 py-1.5 text-xs bg-gray-700 text-gray-100 rounded hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isRefreshingCredentialAudit ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
         </div>
 
         {credentialAuditError ? (
@@ -466,19 +660,72 @@ export function CredentialsPage() {
         ) : credentialAuditEvents.length === 0 ? (
           <p className="text-sm text-gray-400">No credential activity yet.</p>
         ) : (
-          <ul className="space-y-2" aria-label="Credential activity log">
-            {credentialAuditEvents.map((event) => (
-              <li key={event.id} className="flex items-start justify-between gap-3 text-sm border-b border-gray-700/70 pb-2">
-                <div>
-                  <p className={event.success ? 'text-green-300' : 'text-red-300'}>
-                    {event.provider.toUpperCase()}: {toAuditActionLabel(event)}
-                  </p>
-                  {event.detail ? <p className="text-xs text-gray-400">{event.detail}</p> : null}
-                </div>
-                <time className="text-xs text-gray-500">{formatAuditTimestamp(event.timestamp)}</time>
-              </li>
-            ))}
-          </ul>
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+              <label className="text-xs text-gray-300">
+                Provider
+                <select
+                  value={auditProviderFilter}
+                  onChange={(event) => setAuditProviderFilter(event.target.value)}
+                  className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                >
+                  <option value="all">All providers</option>
+                  {auditProviderOptions.map((provider) => (
+                    <option key={provider} value={provider}>
+                      {provider.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-xs text-gray-300">
+                Action
+                <select
+                  value={auditActionFilter}
+                  onChange={(event) => setAuditActionFilter(event.target.value)}
+                  className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                >
+                  <option value="all">All actions</option>
+                  {auditActionOptions.map((action) => (
+                    <option key={action} value={action}>
+                      {action}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-xs text-gray-300">
+                Result
+                <select
+                  value={auditResultFilter}
+                  onChange={(event) => setAuditResultFilter(event.target.value)}
+                  className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                >
+                  <option value="all">All results</option>
+                  <option value="success">Success</option>
+                  <option value="failure">Failure</option>
+                </select>
+              </label>
+            </div>
+
+            {filteredCredentialAuditEvents.length === 0 ? (
+              <p className="text-sm text-gray-400">No activity matches the current filters.</p>
+            ) : (
+              <ul className="space-y-2" aria-label="Credential activity log">
+                {filteredCredentialAuditEvents.map((event) => (
+                  <li key={event.id} className="flex items-start justify-between gap-3 text-sm border-b border-gray-700/70 pb-2">
+                    <div>
+                      <p className={event.success ? 'text-green-300' : 'text-red-300'}>
+                        {event.provider.toUpperCase()}: {toAuditActionLabel(event)}
+                      </p>
+                      {event.detail ? <p className="text-xs text-gray-400">{event.detail}</p> : null}
+                    </div>
+                    <time className="text-xs text-gray-500">{formatAuditTimestamp(event.timestamp)}</time>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </section>
 
@@ -596,6 +843,21 @@ export function CredentialsPage() {
         onConfirm={() => void confirmDeleteGitHubToken()}
         onCancel={() => {
           if (!isDeletingGithub) setShowDeleteGitHubDialog(false);
+        }}
+      />
+      <ConfirmDialog
+        open={showDeleteCredentialDialog}
+        title="Remove GitHub Credential Profile"
+        message={`Remove credential profile "${selectedCredentialForDelete?.label ?? ''}" from local storage?`}
+        confirmLabel={isDeletingGithub ? 'Removing...' : 'Remove Profile'}
+        cancelLabel="Cancel"
+        confirmDisabled={isDeletingGithub}
+        onConfirm={() => void confirmDeleteGitHubCredential()}
+        onCancel={() => {
+          if (!isDeletingGithub) {
+            setShowDeleteCredentialDialog(false);
+            setSelectedCredentialForDelete(null);
+          }
         }}
       />
     </CenteredPage>

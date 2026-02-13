@@ -5,6 +5,7 @@ import {
   listRepositories,
   listIssues,
   createPullRequest,
+  deleteGitHubCredential,
   deleteGitHubToken,
   getAuthStatus,
   getSavedGitHubToken,
@@ -240,6 +241,24 @@ describe('github API', () => {
       mockInvoke.mockRejectedValueOnce(new Error('Delete failed'));
 
       await expect(deleteGitHubToken()).rejects.toThrow('Delete failed');
+    });
+  });
+
+  describe('deleteGitHubCredential', () => {
+    it('calls invoke with credential id', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await deleteGitHubCredential('alice');
+
+      expect(mockInvoke).toHaveBeenCalledWith('delete_github_credential', {
+        credentialId: 'alice',
+      });
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('Delete credential failed'));
+
+      await expect(deleteGitHubCredential('alice')).rejects.toThrow('Delete credential failed');
     });
   });
 

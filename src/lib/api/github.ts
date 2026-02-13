@@ -90,6 +90,10 @@ export async function deleteGitHubToken(): Promise<void> {
   return invoke<void>('delete_github_token');
 }
 
+export async function deleteGitHubCredential(credentialId: string): Promise<void> {
+  return invoke<void>('delete_github_credential', { credentialId });
+}
+
 export async function verifyGitHubToken(token: string): Promise<{
   valid: boolean;
   username: string;

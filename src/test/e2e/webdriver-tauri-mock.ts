@@ -150,6 +150,18 @@ export function installWebDriverTauriMock() {
       return null;
     }
 
+    if (cmd === 'delete_github_credential') {
+      state.auth = { authenticated: false };
+      state.credentialAuditEvents.unshift({
+        id: `audit-${Date.now()}`,
+        provider: 'github',
+        action: 'delete_credential',
+        success: true,
+        timestamp: new Date().toISOString(),
+      });
+      return null;
+    }
+
     if (cmd === 'verify_github_token') {
       const token = String(args.token ?? '');
       if (!token.trim()) {
@@ -211,6 +223,26 @@ export function installWebDriverTauriMock() {
     }
 
     if (cmd === 'cancel_workflow_execution') return null;
+
+    if (cmd === 'copy_debug_bundle') {
+      const executionId = String(args.executionId ?? '');
+      const execution = state.executions.find((item) => item.id === executionId) ?? null;
+      return {
+        bundleJson: JSON.stringify(
+          {
+            exportedAt: new Date().toISOString(),
+            appVersion: '0.1.0',
+            platform: 'mock',
+            execution,
+            workflow: null,
+            logs: executionId ? (state.logsByExecutionId[executionId] ?? []) : [],
+            credentialAuditEvents: state.credentialAuditEvents,
+          },
+          null,
+          2,
+        ),
+      };
+    }
 
     throw new Error(`Unhandled mocked command: ${cmd}`);
   }, { shouldMockEvents: true });

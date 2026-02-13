@@ -3,10 +3,11 @@ use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use rand::RngCore;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
 use sqlx::Row;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::RwLock;
 
 const SERVICE_NAME: &str = "autonomous-agent";
@@ -21,6 +22,7 @@ const DB_KEY_CLAUDE_API_KEY: &str = "credentials.claude.api_key";
 const DB_KEY_CLAUDE_ACCOUNT_LABEL: &str = "credentials.claude.account_label";
 const DB_KEY_CREDENTIAL_AUDIT_EVENTS: &str = "credentials.audit.events";
 const MAX_CREDENTIAL_AUDIT_EVENTS: usize = 200;
+const MAX_CREDENTIAL_AUDIT_DETAIL_CHARS: usize = 512;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitHubCredential {
@@ -91,6 +93,45 @@ impl StorageService {
             "github-account".to_string()
         } else {
             normalized
+        }
+    }
+
+    fn audit_redaction_patterns() -> &'static [Regex] {
+        static PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
+        PATTERNS
+            .get_or_init(|| {
+                vec![
+                    Regex::new(r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b").expect("valid github token regex"),
+                    Regex::new(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b")
+                        .expect("valid github pat regex"),
+                    Regex::new(r"\bsk-ant-[A-Za-z0-9_-]{10,}\b")
+                        .expect("valid anthropic key regex"),
+                    Regex::new(r#"(?i)\b(token|api[_-]?key|secret)\b\s*[:=]\s*["']?[A-Za-z0-9_\-]{12,}["']?"#)
+                        .expect("valid secret assignment regex"),
+                ]
+            })
+            .as_slice()
+    }
+
+    fn sanitize_audit_detail(raw: &str) -> Option<String> {
+        let mut sanitized = raw.trim().to_string();
+        if sanitized.is_empty() {
+            return None;
+        }
+
+        for pattern in Self::audit_redaction_patterns() {
+            sanitized = pattern.replace_all(&sanitized, "[REDACTED]").into_owned();
+        }
+
+        if sanitized.len() > MAX_CREDENTIAL_AUDIT_DETAIL_CHARS {
+            sanitized.truncate(MAX_CREDENTIAL_AUDIT_DETAIL_CHARS);
+            sanitized.push_str("...");
+        }
+
+        if sanitized.is_empty() {
+            None
+        } else {
+            Some(sanitized)
         }
     }
 
@@ -602,6 +643,47 @@ impl StorageService {
         Ok(())
     }
 
+    pub async fn delete_github_credential(&self, credential_id: &str) -> Result<()> {
+        let credential_id = credential_id.trim();
+        if credential_id.is_empty() {
+            return Err(AppError::Validation(
+                "credential_id cannot be empty".to_string(),
+            ));
+        }
+
+        self.try_migrate_legacy_keyring_github_credentials().await?;
+
+        let mut credentials = self.load_credential_index().await?;
+        let initial_len = credentials.len();
+        credentials.retain(|credential| credential.id != credential_id);
+
+        if credentials.len() == initial_len {
+            return Err(AppError::Validation(format!(
+                "GitHub credential '{}' not found",
+                credential_id
+            )));
+        }
+
+        self.delete_config_entry(&Self::token_key_for_credential(credential_id))
+            .await?;
+
+        let _ = Self::normalize_default_flags(&mut credentials);
+        self.save_credential_index(&credentials).await?;
+
+        if credentials.is_empty() {
+            let _ = self.delete_config_entry(DB_KEY_GITHUB_LEGACY_TOKEN).await;
+        }
+
+        if let Ok(entry) = keyring::Entry::new(
+            SERVICE_NAME,
+            &Self::legacy_token_key_for_credential(credential_id),
+        ) {
+            let _ = entry.delete_credential();
+        }
+
+        Ok(())
+    }
+
     pub async fn append_credential_audit_event(
         &self,
         provider: &str,
@@ -629,7 +711,7 @@ impl StorageService {
             provider: provider.to_string(),
             action: action.to_string(),
             success,
-            detail: detail.map(|value| value.trim().to_string()),
+            detail: detail.and_then(Self::sanitize_audit_detail),
             timestamp: chrono::Utc::now().to_rfc3339(),
         });
 
@@ -897,5 +979,88 @@ mod tests {
             .await
             .expect("query stored audit payload");
         assert!(stored.is_some());
+    }
+
+    #[tokio::test]
+    async fn delete_github_credential_removes_target_and_reassigns_default() {
+        let storage = setup_storage_service().await;
+        let pool = storage.db_pool().await.expect("db pool");
+        let now = chrono::Utc::now().to_rfc3339();
+
+        sqlx::query("INSERT INTO config (key, value, encrypted, updated_at) VALUES (?, ?, ?, ?)")
+            .bind(DB_KEY_GITHUB_CREDENTIAL_INDEX)
+            .bind(
+                r#"[{"id":"alice","username":"alice","label":"alice","is_default":true},{"id":"bob","username":"bob","label":"bob","is_default":false}]"#,
+            )
+            .bind(false)
+            .bind(&now)
+            .execute(&pool)
+            .await
+            .expect("insert github index");
+
+        sqlx::query("INSERT INTO config (key, value, encrypted, updated_at) VALUES (?, ?, ?, ?)")
+            .bind("credentials.github.token.alice")
+            .bind("token-a")
+            .bind(true)
+            .bind(&now)
+            .execute(&pool)
+            .await
+            .expect("insert alice token");
+
+        sqlx::query("INSERT INTO config (key, value, encrypted, updated_at) VALUES (?, ?, ?, ?)")
+            .bind("credentials.github.token.bob")
+            .bind("token-b")
+            .bind(true)
+            .bind(&now)
+            .execute(&pool)
+            .await
+            .expect("insert bob token");
+
+        storage
+            .delete_github_credential("alice")
+            .await
+            .expect("delete alice credential");
+
+        let index_payload: String = sqlx::query_scalar("SELECT value FROM config WHERE key = ?")
+            .bind(DB_KEY_GITHUB_CREDENTIAL_INDEX)
+            .fetch_one(&pool)
+            .await
+            .expect("load updated index");
+        let credentials: Vec<GitHubCredential> =
+            serde_json::from_str(&index_payload).expect("parse credential index");
+
+        assert_eq!(credentials.len(), 1);
+        assert_eq!(credentials[0].id, "bob");
+        assert!(credentials[0].is_default);
+
+        let alice_token: Option<String> =
+            sqlx::query_scalar("SELECT value FROM config WHERE key = ?")
+                .bind("credentials.github.token.alice")
+                .fetch_optional(&pool)
+                .await
+                .expect("query alice token");
+        assert!(alice_token.is_none());
+    }
+
+    #[tokio::test]
+    async fn append_credential_audit_event_redacts_secret_like_details() {
+        let storage = setup_storage_service().await;
+        let raw_detail = "token=ghp_abcdefghijklmnopqrstuvwxyz123456 sk-ant-ABCDEFGHIJKLMN";
+
+        storage
+            .append_credential_audit_event("github", "save_token", false, Some(raw_detail))
+            .await
+            .expect("append event");
+
+        let events = storage
+            .list_credential_audit_events(Some(1))
+            .await
+            .expect("list events");
+        assert_eq!(events.len(), 1);
+
+        let detail = events[0].detail.clone().unwrap_or_default();
+        assert!(detail.contains("[REDACTED]"));
+        assert!(!detail.contains("ghp_abcdefghijklmnopqrstuvwxyz123456"));
+        assert!(!detail.contains("sk-ant-ABCDEFGHIJKLMN"));
     }
 }

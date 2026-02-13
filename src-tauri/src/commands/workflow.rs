@@ -1,5 +1,6 @@
 use crate::errors::Result;
 use crate::models::workflow::{Workflow, WorkflowExecution};
+use crate::services::storage::CredentialAuditEvent;
 use crate::services::workflow_engine::preflight::WorkflowPreflightResult;
 use crate::services::AppState;
 use chrono;
@@ -117,6 +118,7 @@ pub struct DebugBundle {
     pub execution: WorkflowExecution,
     pub workflow: Option<Workflow>,
     pub logs: Vec<ExecutionLogEntry>,
+    pub credential_audit_events: Vec<CredentialAuditEvent>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -142,6 +144,17 @@ pub async fn copy_debug_bundle(
 
     let workflow = state.engine.get_workflow(&execution.workflow_id).await?;
     let logs = state.engine.get_execution_logs(&execution.id).await?;
+    let credential_audit_events = match state.storage.list_credential_audit_events(Some(100)).await
+    {
+        Ok(events) => events,
+        Err(error) => {
+            eprintln!(
+                "Could not include credential audit events in debug bundle: {}",
+                error
+            );
+            Vec::new()
+        }
+    };
 
     let bundle = DebugBundle {
         exported_at: chrono::Utc::now().to_rfc3339(),
@@ -150,6 +163,7 @@ pub async fn copy_debug_bundle(
         execution,
         workflow,
         logs,
+        credential_audit_events,
     };
 
     Ok(CopyDebugBundleResponse {

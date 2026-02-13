@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CredentialsPage } from '@/app/routes/credentials/CredentialsPage';
 import { mockInvoke } from '@/test/mocks/tauri';
@@ -25,6 +25,12 @@ function installLocalStorageMock(initial: Record<string, string> = {}) {
 function mockCredentialCommands(options?: {
   savedToken?: string | null;
   savedTokenError?: Error;
+  credentials?: Array<{
+    id: string;
+    username: string;
+    label: string;
+    is_default: boolean;
+  }>;
 }) {
   mockInvoke.mockImplementation((cmd: string) => {
     if (cmd === 'get_auth_status') {
@@ -42,7 +48,20 @@ function mockCredentialCommands(options?: {
     if (cmd === 'authenticate_github') {
       return Promise.resolve({ success: true, username: 'test-user' });
     }
+    if (cmd === 'list_github_credentials') {
+      return Promise.resolve(
+        options?.credentials ?? [{
+          id: 'test-user',
+          username: 'test-user',
+          label: 'test-user',
+          is_default: true,
+        }],
+      );
+    }
     if (cmd === 'delete_github_token') {
+      return Promise.resolve(null);
+    }
+    if (cmd === 'delete_github_credential') {
       return Promise.resolve(null);
     }
     if (cmd === 'verify_github_token') {
@@ -168,6 +187,38 @@ describe('CredentialsPage', () => {
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('delete_github_token');
+    });
+  });
+
+  it('removes a specific credential profile after confirmation', async () => {
+    const user = userEvent.setup();
+    mockCredentialCommands({
+      savedToken: 'ghp_savedtoken123',
+      credentials: [
+        {
+          id: 'alice',
+          username: 'alice',
+          label: 'alice',
+          is_default: true,
+        },
+      ],
+    });
+
+    render(<CredentialsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Remove Profile' })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Remove Profile' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Remove GitHub Credential Profile')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Remove Profile' }));
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('delete_github_credential', {
+        credentialId: 'alice',
+      });
     });
   });
 });

@@ -263,17 +263,75 @@ pub async fn get_saved_github_token(state: State<'_, AppState>) -> Result<serde_
 
 #[tauri::command]
 pub async fn delete_github_token(state: State<'_, AppState>) -> Result<()> {
-    state.storage.delete_all_github_credentials().await?;
-    state.github.clear_authentication().await;
-    append_audit_event(
-        &state,
-        "github",
-        "delete_token",
-        true,
-        Some("Removed all saved GitHub credential entries.".to_string()),
-    )
-    .await;
-    Ok(())
+    match state.storage.delete_all_github_credentials().await {
+        Ok(_) => {
+            state.github.clear_authentication().await;
+            append_audit_event(
+                &state,
+                "github",
+                "delete_token",
+                true,
+                Some("Removed all saved GitHub credential entries.".to_string()),
+            )
+            .await;
+            Ok(())
+        }
+        Err(error) => {
+            append_audit_event(
+                &state,
+                "github",
+                "delete_token",
+                false,
+                Some(error.to_string()),
+            )
+            .await;
+            Err(error)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn delete_github_credential(
+    credential_id: String,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    let credential_id = credential_id.trim().to_string();
+    if credential_id.is_empty() {
+        return Err(crate::errors::AppError::Validation(
+            "credential_id cannot be empty".to_string(),
+        ));
+    }
+    if credential_id == ACTIVE_SESSION_CREDENTIAL_ID {
+        return Err(crate::errors::AppError::Validation(
+            "Cannot delete active session credential placeholder".to_string(),
+        ));
+    }
+
+    match state.storage.delete_github_credential(&credential_id).await {
+        Ok(_) => {
+            state.github.clear_authentication().await;
+            append_audit_event(
+                &state,
+                "github",
+                "delete_credential",
+                true,
+                Some(format!("Removed credential '{}'.", credential_id)),
+            )
+            .await;
+            Ok(())
+        }
+        Err(error) => {
+            append_audit_event(
+                &state,
+                "github",
+                "delete_credential",
+                false,
+                Some(error.to_string()),
+            )
+            .await;
+            Err(error)
+        }
+    }
 }
 
 #[tauri::command]
