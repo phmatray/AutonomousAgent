@@ -4,7 +4,7 @@ mod tests {
         ClaudeProvider, ExecutionContext, NodeExecutor, ServiceProvider,
     };
     use crate::services::workflow_engine::nodes::control::{
-        ConditionNode, DelayNode, LoopNode, TriggerNode,
+        ConditionNode, CronTriggerNode, DelayNode, LoopNode, TriggerNode,
     };
     use crate::services::{GitHubClient, GitService, StorageService};
     use serde_json::{json, Value};
@@ -101,6 +101,40 @@ mod tests {
         let ts = result["triggered_at"].as_str().unwrap();
         // RFC3339 timestamps contain 'T' and '+' or 'Z'
         assert!(ts.contains('T'), "Expected RFC3339 timestamp, got: {}", ts);
+    }
+
+    #[tokio::test]
+    async fn cron_trigger_node_type_is_trigger_cron() {
+        let node = CronTriggerNode;
+        assert_eq!(node.node_type(), "trigger.cron");
+    }
+
+    #[tokio::test]
+    async fn cron_trigger_validate_requires_schedule() {
+        let node = CronTriggerNode;
+        assert!(node.validate(&json!({})).is_err());
+        assert!(node.validate(&json!({ "schedule": "0 * * * *" })).is_ok());
+    }
+
+    #[tokio::test]
+    async fn cron_trigger_execute_emits_schedule_and_timezone() {
+        let node = CronTriggerNode;
+        let services = test_services();
+        let ctx = empty_context();
+        let config = json!({
+            "schedule": "0 */6 * * *",
+            "timezone": "Europe/Paris"
+        });
+
+        let result = node
+            .execute("trigger-cron-1", &config, &ctx, &services)
+            .await
+            .unwrap();
+
+        assert_eq!(result["trigger_type"], "cron");
+        assert_eq!(result["schedule"], "0 */6 * * *");
+        assert_eq!(result["timezone"], "Europe/Paris");
+        assert!(result["triggered_at"].is_string());
     }
 
     // ---------------------------------------------------------------

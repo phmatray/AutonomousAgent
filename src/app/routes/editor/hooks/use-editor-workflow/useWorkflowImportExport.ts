@@ -34,6 +34,7 @@ export function useWorkflowImportExport({
     const payload = buildWorkflowPayload({
       workflowId: graph.workflowId,
       workflowName: graph.workflowName,
+      workflowStatus: graph.workflowStatus,
       nodes: graph.nodes,
       edges: graph.edges,
     });

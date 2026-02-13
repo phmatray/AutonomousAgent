@@ -29,10 +29,13 @@ export function getAvailableVariablesForNode(
     if (!schema) continue;
 
     for (const output of schema.outputs) {
+      const outputDescription = output.type
+        ? `${output.description} (type: ${output.type})`
+        : output.description;
       variables.push({
         label: `${getNodeLabel(node.data.nodeType)} - ${output.name}`,
         value: `${upstreamNodeId}.${output.name}`,
-        description: output.description,
+        description: outputDescription,
       });
     }
   }

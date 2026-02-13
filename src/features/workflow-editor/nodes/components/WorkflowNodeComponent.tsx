@@ -12,7 +12,11 @@ import {
   X,
 } from 'lucide-react';
 import type { WorkflowNode } from '@/features/workflow-editor/stores/editor-store';
-import { getNodeLabel } from '@/features/workflow-editor/nodes/catalog';
+import {
+  getNodeLabel,
+  getNodeInputMode,
+  getNodeOutputMode,
+} from '@/features/workflow-editor/nodes/catalog';
 import { getNodeFeature, type NodeFeature } from '@/features/workflow-editor/nodes/features';
 import { NODE_ICONS } from '@/features/workflow-editor/nodes/icons';
 
@@ -85,6 +89,8 @@ function WorkflowNodeComponent({ data, selected, dragging }: NodeProps<WorkflowN
   const ExecIcon = execStyle.icon;
   const configSummary = getConfigSummary(data.config);
   const nodeLabel = getNodeLabel(data.nodeType);
+  const inputMode = getNodeInputMode(data.nodeType);
+  const outputMode = getNodeOutputMode(data.nodeType);
 
   const borderColor = execStatus !== 'idle' ? execStyle.borderClass : (selected ? style.selectedBorder : style.border);
   const statusLabel = execStatus !== 'idle' ? `, status: ${execStatus}` : '';
@@ -116,12 +122,14 @@ function WorkflowNodeComponent({ data, selected, dragging }: NodeProps<WorkflowN
       role="group"
       aria-label={`${nodeLabel} workflow node${statusLabel}`}
     >
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="!w-3 !h-3 !bg-border-primary !border-2 !border-bg-elevated hover:!bg-control hover:!border-control !transition-colors"
-        aria-label="Input connection point"
-      />
+      {inputMode !== 'none' && (
+        <Handle
+          type="target"
+          position={Position.Top}
+          className="!w-3 !h-3 !bg-border-primary !border-2 !border-bg-elevated hover:!bg-control hover:!border-control !transition-colors"
+          aria-label="Input connection point"
+        />
+      )}
       <div className="px-4 py-3">
         <div className="flex items-center gap-2.5">
           <span
@@ -156,7 +164,7 @@ function WorkflowNodeComponent({ data, selected, dragging }: NodeProps<WorkflowN
           )}
         </div>
       </div>
-      {data.nodeType === 'condition' ? (
+      {outputMode === 'branching' ? (
         <>
           <Handle
             type="source"

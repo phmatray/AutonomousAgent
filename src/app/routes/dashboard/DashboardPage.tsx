@@ -4,15 +4,15 @@ import type { Workflow } from '@/types/workflow';
 import { useEffect, useMemo, useState } from 'react';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useWorkflowCatalogActorRef, WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
+import { executeWorkflow, updateWorkflow } from '@/lib/api/workflow';
 
 type SortOption = 'updated-desc' | 'name-asc' | 'name-desc' | 'nodes-desc';
-type WorkflowStatus = 'active' | 'draft' | 'error';
+type WorkflowStatus = 'draft' | 'published';
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
-    active: 'bg-green-900 text-green-300',
+    published: 'bg-green-900 text-green-300',
     draft: 'bg-gray-700 text-gray-300',
-    error: 'bg-red-900 text-red-300',
   };
   return (
     <span
@@ -25,7 +25,7 @@ function StatusBadge({ status }: { status: string }) {
 
 function getWorkflowStatus(workflow: Workflow): WorkflowStatus {
   const rawStatus = (workflow as Workflow & { status?: string }).status?.toLowerCase();
-  if (rawStatus === 'active' || rawStatus === 'error' || rawStatus === 'draft') {
+  if (rawStatus === 'published' || rawStatus === 'draft') {
     return rawStatus;
   }
   return 'draft';
@@ -33,13 +33,24 @@ function getWorkflowStatus(workflow: Workflow): WorkflowStatus {
 
 function WorkflowCard({
   workflow,
+  isUpdatingStatus,
+  isRunning,
   onClick,
+  onTogglePublish,
+  onRun,
   onDelete
 }: {
   workflow: Workflow;
+  isUpdatingStatus: boolean;
+  isRunning: boolean;
   onClick: () => void;
+  onTogglePublish: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  onRun: (e: React.MouseEvent<HTMLButtonElement>) => void;
   onDelete: (e: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
+  const status = getWorkflowStatus(workflow);
+  const isPublished = status === 'published';
+
   return (
     <article
       className="bg-gray-800 border border-gray-700 rounded-lg p-4 hover:border-indigo-500 transition-colors relative group"
@@ -54,7 +65,7 @@ function WorkflowCard({
       >
         <div className="flex items-start justify-between mb-2">
           <h3 className="text-white font-medium">{workflow.name}</h3>
-          <StatusBadge status={getWorkflowStatus(workflow)} />
+          <StatusBadge status={status} />
         </div>
         {workflow.description && (
           <p className="text-sm text-gray-400 mb-3">{workflow.description}</p>
@@ -64,6 +75,31 @@ function WorkflowCard({
           <span>v{workflow.version}</span>
         </div>
       </button>
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onTogglePublish}
+          disabled={isUpdatingStatus}
+          className="px-2.5 py-1 text-xs rounded border border-gray-600 text-gray-200 hover:border-indigo-500 hover:text-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label={isPublished ? 'Move workflow to draft' : 'Publish workflow'}
+        >
+          {isUpdatingStatus
+            ? 'Saving...'
+            : isPublished
+              ? 'Move to Draft'
+              : 'Publish'}
+        </button>
+        <button
+          type="button"
+          onClick={onRun}
+          disabled={!isPublished || isRunning}
+          className="px-2.5 py-1 text-xs rounded border border-indigo-600 text-indigo-300 hover:bg-indigo-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label={`Run workflow ${workflow.name}`}
+          title={!isPublished ? 'Publish workflow before running' : undefined}
+        >
+          {isRunning ? 'Running...' : 'Run'}
+        </button>
+      </div>
       <button
         onClick={onDelete}
         className="absolute top-2 right-2 p-1.5 rounded bg-gray-900/80 text-gray-400 hover:text-red-400 hover:bg-red-900/20 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-all focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-red-500"
@@ -82,12 +118,11 @@ function KpiChips({ workflows }: { workflows: Workflow[] }) {
       (acc, workflow) => {
         const status = getWorkflowStatus(workflow);
         acc.total += 1;
-        if (status === 'active') acc.active += 1;
+        if (status === 'published') acc.published += 1;
         if (status === 'draft') acc.draft += 1;
-        if (status === 'error') acc.error += 1;
         return acc;
       },
-      { total: 0, active: 0, draft: 0, error: 0 },
+      { total: 0, published: 0, draft: 0 },
     );
   }, [workflows]);
 
@@ -97,13 +132,10 @@ function KpiChips({ workflows }: { workflows: Workflow[] }) {
         Total {stats.total}
       </span>
       <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-green-900/40 border border-green-800 text-green-300">
-        Active {stats.active}
+        Published {stats.published}
       </span>
       <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-800 border border-gray-700 text-gray-300">
         Draft {stats.draft}
-      </span>
-      <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-red-900/40 border border-red-800 text-red-300">
-        Error {stats.error}
       </span>
     </div>
   );
@@ -182,6 +214,9 @@ export function DashboardPage() {
   const isDeleting = WorkflowCatalogContext.useSelector((state) => state.matches('deleting'));
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('updated-desc');
+  const [statusUpdateWorkflowId, setStatusUpdateWorkflowId] = useState<string | null>(null);
+  const [runningWorkflowId, setRunningWorkflowId] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   useEffect(() => {
     actorRef.send({ type: 'REFRESH' });
@@ -198,6 +233,45 @@ export function DashboardPage() {
   const handleDeleteClick = (e: React.MouseEvent, workflow: Workflow) => {
     e.stopPropagation(); // Prevent card click from firing
     actorRef.send({ type: 'REQUEST_DELETE', id: workflow.id });
+  };
+
+  const handleTogglePublish = async (e: React.MouseEvent, workflow: Workflow) => {
+    e.stopPropagation();
+    setPageError(null);
+    setStatusUpdateWorkflowId(workflow.id);
+    try {
+      const current = getWorkflowStatus(workflow);
+      const nextStatus: WorkflowStatus = current === 'published' ? 'draft' : 'published';
+      await updateWorkflow(workflow.id, { ...workflow, status: nextStatus });
+      actorRef.send({ type: 'REFRESH' });
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : 'Failed to update workflow status');
+    } finally {
+      setStatusUpdateWorkflowId(null);
+    }
+  };
+
+  const handleRunWorkflow = async (e: React.MouseEvent, workflow: Workflow) => {
+    e.stopPropagation();
+    setPageError(null);
+    if (getWorkflowStatus(workflow) !== 'published') {
+      setPageError('Only published workflows can run from this page.');
+      return;
+    }
+
+    setRunningWorkflowId(workflow.id);
+    try {
+      const execution = await executeWorkflow(workflow.id, 'manual');
+      if (execution?.id) {
+        navigate('monitoring', { id: execution.id });
+      } else {
+        navigate('monitoring');
+      }
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : 'Failed to run workflow');
+    } finally {
+      setRunningWorkflowId(null);
+    }
   };
 
   const confirmDelete = () => {
@@ -241,9 +315,9 @@ export function DashboardPage() {
   return (
     <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-5xl mx-auto">
-          {actionError && (
+          {(actionError || pageError) && (
             <div className="mb-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-300" role="alert">
-              {actionError}
+              {pageError ?? actionError}
             </div>
           )}
           <div className="flex items-center justify-between mb-6">
@@ -328,7 +402,11 @@ export function DashboardPage() {
                   <div key={wf.id} role="listitem">
                     <WorkflowCard
                       workflow={wf}
+                      isUpdatingStatus={statusUpdateWorkflowId === wf.id}
+                      isRunning={runningWorkflowId === wf.id}
                       onClick={() => navigateToEditor(wf.id)}
+                      onTogglePublish={(e) => void handleTogglePublish(e, wf)}
+                      onRun={(e) => void handleRunWorkflow(e, wf)}
                       onDelete={(e) => handleDeleteClick(e, wf)}
                     />
                   </div>

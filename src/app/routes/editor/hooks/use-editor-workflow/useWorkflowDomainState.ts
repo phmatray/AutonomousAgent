@@ -14,6 +14,7 @@ export function useWorkflowDomainState(): UseWorkflowDomainStateResult {
   const [domainState, sendDomainEvent] = useMachine(editorDomainMachine);
   const workflowId = domainState.context.workflowId;
   const workflowName = domainState.context.workflowName;
+  const workflowStatus = domainState.context.workflowStatus;
   const isDirty = domainState.context.isDirty;
 
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId);
@@ -58,6 +59,7 @@ export function useWorkflowDomainState(): UseWorkflowDomainStateResult {
       edges,
       workflowId,
       workflowName,
+      workflowStatus,
       isDirty,
       selectedNodeId,
       pendingDeleteNodeId,

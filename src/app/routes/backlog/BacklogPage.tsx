@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { listRepositories, type GitHubRepo } from '@/lib/api/github';
 import {
@@ -11,8 +11,11 @@ import { BacklogHeader } from './BacklogHeader';
 import { RepositorySelector } from './RepositorySelector';
 import { BacklogFilters } from './BacklogFilters';
 import { BacklogTable } from './BacklogTable';
+import { BacklogDetailsPanel } from './BacklogDetailsPanel';
+import { useRouter } from '@/lib/router';
 
 export function BacklogPage() {
+  const { params, navigate } = useRouter();
   const queryClient = useQueryClient();
 
   const [selectedOwner, setSelectedOwner] = useState('');
@@ -20,6 +23,7 @@ export function BacklogPage() {
   const [stateFilter, setStateFilter] = useState('');
   const [labelFilter, setLabelFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const selectedItemId = params.get('item');
 
   const { data: repositories = [], isLoading: reposLoading } = useQuery<GitHubRepo[]>({
     queryKey: ['repositories'],
@@ -72,6 +76,26 @@ export function BacklogPage() {
     return Array.from(labelSet).sort();
   }, [backlogItems]);
 
+  const selectedItem = useMemo(
+    () => backlogItems.find((item) => item.id === selectedItemId) ?? null,
+    [backlogItems, selectedItemId],
+  );
+
+  useEffect(() => {
+    if (!selectedItemId || backlogLoading) return;
+    if (!selectedItem) {
+      navigate('backlog');
+    }
+  }, [backlogLoading, navigate, selectedItem, selectedItemId]);
+
+  const openDetails = (itemId: string) => {
+    navigate('backlog', { item: itemId });
+  };
+
+  const closeDetails = () => {
+    navigate('backlog');
+  };
+
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <div className="max-w-6xl mx-auto">
@@ -114,12 +138,19 @@ export function BacklogPage() {
             <span className="sr-only">Loading backlog...</span>
           </div>
         ) : (
-          <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden">
-            <BacklogTable
-              items={backlogItems}
-              onDelete={(id) => deleteMutation.mutate(id)}
-              isDeleting={deleteMutation.isPending}
-            />
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex-1 min-w-0">
+              <BacklogTable
+                items={backlogItems}
+                selectedItemId={selectedItemId}
+                onViewDetails={openDetails}
+                onDelete={(id) => deleteMutation.mutate(id)}
+                isDeleting={deleteMutation.isPending}
+              />
+            </div>
+            {selectedItem && (
+              <BacklogDetailsPanel item={selectedItem} onClose={closeDetails} />
+            )}
           </div>
         )}
       </div>

@@ -4,6 +4,8 @@
       "type": "trigger",
       "label": "Trigger",
       "category": "control",
+      "inputMode": "none",
+      "outputMode": "single",
       "fields": [
         {
           "key": "trigger_type",
@@ -14,21 +16,55 @@
           "defaultValue": "manual",
           "options": [
             { "label": "Manual", "value": "manual" },
-            { "label": "Cron", "value": "cron" },
             { "label": "Webhook", "value": "webhook" },
             { "label": "State Change", "value": "state" }
           ]
         }
       ],
       "outputs": [
-        { "name": "triggered_at", "description": "ISO timestamp when the workflow was triggered" },
-        { "name": "trigger_type", "description": "The type of trigger that started execution" }
+        { "name": "triggered_at", "description": "ISO timestamp when the workflow was triggered", "type": "string" },
+        { "name": "trigger_type", "description": "The type of trigger that started execution", "type": "string" }
+      ]
+    },
+    {
+      "type": "trigger.cron",
+      "label": "Cron Trigger",
+      "category": "control",
+      "inputMode": "none",
+      "outputMode": "single",
+      "fields": [
+        {
+          "key": "schedule",
+          "label": "Cron Schedule",
+          "type": "text",
+          "required": true,
+          "placeholder": "0 * * * *",
+          "description": "Cron expression used by external schedulers",
+          "defaultValue": "0 * * * *"
+        },
+        {
+          "key": "timezone",
+          "label": "Timezone",
+          "type": "text",
+          "required": false,
+          "placeholder": "UTC",
+          "description": "IANA timezone identifier (informational)",
+          "defaultValue": "UTC"
+        }
+      ],
+      "outputs": [
+        { "name": "triggered_at", "description": "ISO timestamp when the workflow was triggered", "type": "string" },
+        { "name": "trigger_type", "description": "Always \"cron\" for this node", "type": "string" },
+        { "name": "schedule", "description": "Configured cron schedule", "type": "string" },
+        { "name": "timezone", "description": "Configured timezone", "type": "string" }
       ]
     },
     {
       "type": "condition",
       "label": "Condition",
       "category": "control",
+      "inputMode": "single",
+      "outputMode": "branching",
       "fields": [
         {
           "key": "condition",
@@ -66,14 +102,16 @@
         }
       ],
       "outputs": [
-        { "name": "result", "description": "Boolean result of the condition evaluation" },
-        { "name": "branch", "description": "\"true\" or \"false\" indicating which branch to take" }
+        { "name": "result", "description": "Boolean result of the condition evaluation", "type": "boolean" },
+        { "name": "branch", "description": "\"true\" or \"false\" indicating which branch to take", "type": "string" }
       ]
     },
     {
       "type": "loop",
       "label": "Loop",
       "category": "control",
+      "inputMode": "single",
+      "outputMode": "single",
       "fields": [
         {
           "key": "items",
@@ -93,16 +131,18 @@
         }
       ],
       "outputs": [
-        { "name": "current_item", "description": "The current iteration item" },
-        { "name": "index", "description": "Current iteration index (0-based)" },
-        { "name": "total", "description": "Total number of items being iterated" },
-        { "name": "items", "description": "The full list of items" }
+        { "name": "current_item", "description": "The current iteration item", "type": "any" },
+        { "name": "index", "description": "Current iteration index (0-based)", "type": "number" },
+        { "name": "total", "description": "Total number of items being iterated", "type": "number" },
+        { "name": "items", "description": "The full list of items", "type": "array" }
       ]
     },
     {
       "type": "delay",
       "label": "Delay",
       "category": "control",
+      "inputMode": "single",
+      "outputMode": "single",
       "fields": [
         {
           "key": "seconds",
@@ -115,13 +155,15 @@
         }
       ],
       "outputs": [
-        { "name": "waited_seconds", "description": "Duration of the delay in seconds" }
+        { "name": "waited_seconds", "description": "Duration of the delay in seconds", "type": "number" }
       ]
     },
     {
       "type": "github.sync",
       "label": "Sync Repository",
       "category": "github",
+      "inputMode": "single",
+      "outputMode": "single",
       "fields": [
         {
           "key": "credential_id",
@@ -157,15 +199,17 @@
         }
       ],
       "outputs": [
-        { "name": "repo_path", "description": "Full path to the local repository" },
-        { "name": "owner", "description": "Repository owner" },
-        { "name": "repo", "description": "Repository name" }
+        { "name": "repo_path", "description": "Full path to the local repository", "type": "string" },
+        { "name": "owner", "description": "Repository owner", "type": "string" },
+        { "name": "repo", "description": "Repository name", "type": "string" }
       ]
     },
     {
       "type": "github.readIssues",
       "label": "Read Issues",
       "category": "github",
+      "inputMode": "single",
+      "outputMode": "single",
       "fields": [
         {
           "key": "credential_id",
@@ -192,14 +236,16 @@
         }
       ],
       "outputs": [
-        { "name": "issues", "description": "Array of issue objects (number, title, body, state, labels, assignees)" },
-        { "name": "count", "description": "Number of open issues" }
+        { "name": "issues", "description": "Array of issue objects (number, title, body, state, labels, assignees)", "type": "array" },
+        { "name": "count", "description": "Number of open issues", "type": "number" }
       ]
     },
     {
       "type": "backlog.syncIssues",
       "label": "Sync Issues to Backlog",
       "category": "github",
+      "inputMode": "single",
+      "outputMode": "single",
       "fields": [
         {
           "key": "credential_id",
@@ -226,16 +272,18 @@
         }
       ],
       "outputs": [
-        { "name": "owner", "description": "Repository owner" },
-        { "name": "repo", "description": "Repository name" },
-        { "name": "count", "description": "Number of issues synced into backlog" },
-        { "name": "items", "description": "Synced backlog items for the repository" }
+        { "name": "owner", "description": "Repository owner", "type": "string" },
+        { "name": "repo", "description": "Repository name", "type": "string" },
+        { "name": "count", "description": "Number of issues synced into backlog", "type": "number" },
+        { "name": "items", "description": "Synced backlog items for the repository", "type": "array" }
       ]
     },
     {
       "type": "github.createPR",
       "label": "Create PR",
       "category": "github",
+      "inputMode": "single",
+      "outputMode": "single",
       "fields": [
         {
           "key": "credential_id",
@@ -295,9 +343,9 @@
         }
       ],
       "outputs": [
-        { "name": "number", "description": "Pull request number" },
-        { "name": "html_url", "description": "URL to the pull request on GitHub" },
-        { "name": "title", "description": "Pull request title" }
+        { "name": "number", "description": "Pull request number", "type": "number" },
+        { "name": "html_url", "description": "URL to the pull request on GitHub", "type": "string" },
+        { "name": "title", "description": "Pull request title", "type": "string" }
       ]
     },
     {

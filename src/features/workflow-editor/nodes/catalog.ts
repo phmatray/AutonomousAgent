@@ -23,12 +23,18 @@ export interface FieldSchema {
 export interface OutputVariable {
   name: string;
   description: string;
+  type?: string;
 }
 
 export interface NodeConfigSchema {
   fields: FieldSchema[];
   outputs: OutputVariable[];
+  inputMode: NodeInputMode;
+  outputMode: NodeOutputMode;
 }
+
+export type NodeInputMode = 'none' | 'single';
+export type NodeOutputMode = 'single' | 'branching';
 
 interface NodeCatalogEntry {
   type: NodeType;
@@ -36,6 +42,8 @@ interface NodeCatalogEntry {
   category: 'control' | 'github' | 'git' | 'claude';
   fields: FieldSchema[];
   outputs: OutputVariable[];
+  inputMode?: NodeInputMode;
+  outputMode?: NodeOutputMode;
 }
 
 interface NodeCatalog {
@@ -108,9 +116,15 @@ const EXECUTION_POLICY_FIELDS: FieldSchema[] = [
 ];
 
 function buildNodeSchema(entry: NodeCatalogEntry): NodeConfigSchema {
+  const defaultOutputMode: NodeOutputMode = entry.type === 'condition' ? 'branching' : 'single';
+  const defaultInputMode: NodeInputMode =
+    entry.type === 'trigger' || entry.type === 'trigger.cron' ? 'none' : 'single';
+
   return {
     fields: [...entry.fields, ...EXECUTION_POLICY_FIELDS],
     outputs: entry.outputs,
+    inputMode: entry.inputMode ?? defaultInputMode,
+    outputMode: entry.outputMode ?? defaultOutputMode,
   };
 }
 
@@ -144,6 +158,14 @@ export function getRequiredFields(nodeType: NodeType): FieldSchema[] {
 
 export function getNodeOutputs(nodeType: NodeType): OutputVariable[] {
   return NODE_SCHEMAS[nodeType].outputs;
+}
+
+export function getNodeInputMode(nodeType: NodeType): NodeInputMode {
+  return NODE_SCHEMAS[nodeType].inputMode;
+}
+
+export function getNodeOutputMode(nodeType: NodeType): NodeOutputMode {
+  return NODE_SCHEMAS[nodeType].outputMode;
 }
 
 export function getNodeLabel(nodeType: NodeType): string {

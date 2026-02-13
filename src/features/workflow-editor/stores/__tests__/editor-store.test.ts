@@ -102,6 +102,12 @@ describe('Editor Store', () => {
       expect(node.data.config).toEqual({ trigger_type: 'manual' });
     });
 
+    it('sets default config for cron trigger nodes', () => {
+      useEditorStore.getState().addNode('trigger.cron', { x: 0, y: 0 });
+      const node = useEditorStore.getState().nodes[0];
+      expect(node.data.config).toEqual({ schedule: '0 * * * *', timezone: 'UTC' });
+    });
+
     it('sets empty config for non-trigger nodes', () => {
       useEditorStore.getState().addNode('claude.plan', { x: 0, y: 0 });
       const node = useEditorStore.getState().nodes[0];
@@ -135,6 +141,7 @@ describe('Editor Store', () => {
 
     it('uses correct labels for all node types', () => {
       const expectedLabels: Record<NodeType, string> = {
+        'trigger.cron': 'Cron Trigger',
         'backlog.syncIssues': 'Sync Issues to Backlog',
         'github.sync': 'Sync Repository',
         'github.readIssues': 'Read Issues',

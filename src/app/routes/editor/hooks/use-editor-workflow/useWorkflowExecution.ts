@@ -30,7 +30,10 @@ export function useWorkflowExecution({
   const handleExecute = useCallback(async () => {
     if (!isWorkflowNameValid || flow.isBusy) return;
 
-    const requiresGitHubAuth = graph.nodes.some((node) => node.data.nodeType.startsWith('github.'));
+    const requiresGitHubAuth = graph.nodes.some((node) => {
+      const type = node.data.nodeType;
+      return type.startsWith('github.') || type === 'backlog.syncIssues';
+    });
     if (requiresGitHubAuth) {
       try {
         const authStatus = await getAuthStatus();
@@ -55,6 +58,7 @@ export function useWorkflowExecution({
       const payload = buildWorkflowPayload({
         workflowId: graph.workflowId,
         workflowName: graph.workflowName,
+        workflowStatus: graph.workflowStatus,
         nodes: graph.nodes,
         edges: graph.edges,
       });
@@ -79,6 +83,7 @@ export function useWorkflowExecution({
           type: 'WORKFLOW_CREATED',
           id: createdWorkflow.id,
           name: createdWorkflow.name,
+          status: createdWorkflow.status ?? 'draft',
         });
         navigate('editor', { id: createdWorkflow.id });
       }

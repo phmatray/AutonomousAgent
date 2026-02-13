@@ -8,7 +8,7 @@ Entry point node that starts workflow execution and emits trigger metadata.
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `trigger_type` | string | No | `manual` | Informational trigger type (for example: `manual`, `cron`, `webhook`, `state`). |
+| `trigger_type` | string | No | `manual` | Informational trigger type (for example: `manual`, `webhook`, `state`). |
 
 ## Output
 
@@ -24,11 +24,12 @@ Entry point node that starts workflow execution and emits trigger metadata.
 - Emits current UTC timestamp in RFC3339 format.
 - Does not validate `trigger_type` against an allowed list.
 - Does not perform template resolution on config.
+- This node is an entry point and does not accept inbound connections.
 
 ## Example
 
 ```json
 {
-  "trigger_type": "cron"
+  "trigger_type": "manual"
 }
 ```

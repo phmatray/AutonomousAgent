@@ -1,6 +1,7 @@
 // Workflow type definitions
 
 export type NodeType =
+  | 'trigger.cron'
   | 'backlog.syncIssues'
   | 'github.sync'
   | 'github.readIssues'
@@ -24,6 +25,8 @@ export type ExecutionStatus =
   | 'COMPLETED'
   | 'FAILED'
   | 'CANCELLED';
+
+export type WorkflowLifecycleStatus = 'draft' | 'published';
 
 export interface WorkflowNode {
   id: string;
@@ -55,6 +58,7 @@ export interface Workflow {
   id: string;
   name: string;
   description?: string;
+  status?: WorkflowLifecycleStatus;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   config?: Record<string, any>;

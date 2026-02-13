@@ -101,7 +101,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   addNode: (type, position) => {
     const id = `node-${Date.now()}`;
     // Set default config based on node type
-    const defaultConfig = type === 'trigger' ? { trigger_type: 'manual' } : {};
+    const defaultConfig =
+      type === 'trigger'
+        ? { trigger_type: 'manual' }
+        : type === 'trigger.cron'
+          ? { schedule: '0 * * * *', timezone: 'UTC' }
+          : {};
     const newNode: WorkflowNode = {
       id,
       type: 'workflowNode',

@@ -4,6 +4,7 @@ import type { WorkflowEdge, WorkflowNode } from '@/features/workflow-editor/stor
 interface BuildWorkflowPayloadInput {
   workflowId: string | null;
   workflowName: string;
+  workflowStatus: 'draft' | 'published';
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
 }
@@ -11,12 +12,14 @@ interface BuildWorkflowPayloadInput {
 export function buildWorkflowPayload({
   workflowId,
   workflowName,
+  workflowStatus,
   nodes,
   edges,
 }: BuildWorkflowPayloadInput): Workflow {
   return {
     id: workflowId || '',
     name: workflowName,
+    status: workflowStatus,
     nodes: nodes.map((node) => ({
       id: node.id,
       type: node.data.nodeType,

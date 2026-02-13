@@ -3,5 +3,5 @@ import type { NodeFeatureDefinition } from '@/features/workflow-editor/nodes/fea
 export const CONTROL_NODE_FEATURE: NodeFeatureDefinition = {
   key: 'control',
   label: 'Control Flow',
-  nodeTypes: ['trigger', 'condition', 'loop', 'delay'],
+  nodeTypes: ['trigger', 'trigger.cron', 'condition', 'loop', 'delay'],
 };

@@ -87,7 +87,7 @@ impl WorkflowEngine {
     pub async fn list_workflows(&self) -> Result<Vec<Workflow>> {
         let pool = self.get_pool().await?;
         let rows = sqlx::query_as::<_, WorkflowRow>(
-            "SELECT id, name, description, nodes, edges, config, version, created_at, updated_at FROM workflows ORDER BY updated_at DESC",
+            "SELECT id, name, description, status, nodes, edges, config, version, created_at, updated_at FROM workflows ORDER BY updated_at DESC",
         )
         .fetch_all(&pool)
         .await?;
@@ -98,7 +98,7 @@ impl WorkflowEngine {
     pub async fn get_workflow(&self, id: &str) -> Result<Option<Workflow>> {
         let pool = self.get_pool().await?;
         let row = sqlx::query_as::<_, WorkflowRow>(
-            "SELECT id, name, description, nodes, edges, config, version, created_at, updated_at FROM workflows WHERE id = ?",
+            "SELECT id, name, description, status, nodes, edges, config, version, created_at, updated_at FROM workflows WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&pool)
@@ -112,6 +112,11 @@ impl WorkflowEngine {
 
     pub async fn create_workflow(&self, workflow: &Workflow) -> Result<Workflow> {
         let pool = self.get_pool().await?;
+        let workflow_status = if workflow.status.trim().is_empty() {
+            "draft"
+        } else {
+            workflow.status.as_str()
+        };
         let nodes_json = serde_json::to_string(&workflow.nodes)?;
         let edges_json = serde_json::to_string(&workflow.edges)?;
         let config_json = workflow
@@ -121,11 +126,12 @@ impl WorkflowEngine {
             .transpose()?;
 
         sqlx::query(
-            "INSERT INTO workflows (id, name, description, nodes, edges, config, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO workflows (id, name, description, status, nodes, edges, config, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&workflow.id)
         .bind(&workflow.name)
         .bind(&workflow.description)
+        .bind(workflow_status)
         .bind(&nodes_json)
         .bind(&edges_json)
         .bind(&config_json)
@@ -140,6 +146,11 @@ impl WorkflowEngine {
 
     pub async fn update_workflow(&self, id: &str, workflow: &Workflow) -> Result<Workflow> {
         let pool = self.get_pool().await?;
+        let workflow_status = if workflow.status.trim().is_empty() {
+            "draft"
+        } else {
+            workflow.status.as_str()
+        };
         let nodes_json = serde_json::to_string(&workflow.nodes)?;
         let edges_json = serde_json::to_string(&workflow.edges)?;
         let config_json = workflow
@@ -150,10 +161,11 @@ impl WorkflowEngine {
         let now = chrono::Utc::now().to_rfc3339();
 
         sqlx::query(
-            "UPDATE workflows SET name = ?, description = ?, nodes = ?, edges = ?, config = ?, version = version + 1, updated_at = ? WHERE id = ?",
+            "UPDATE workflows SET name = ?, description = ?, status = ?, nodes = ?, edges = ?, config = ?, version = version + 1, updated_at = ? WHERE id = ?",
         )
         .bind(&workflow.name)
         .bind(&workflow.description)
+        .bind(workflow_status)
         .bind(&nodes_json)
         .bind(&edges_json)
         .bind(&config_json)
@@ -477,6 +489,7 @@ struct WorkflowRow {
     id: String,
     name: String,
     description: Option<String>,
+    status: Option<String>,
     nodes: String,
     edges: String,
     config: Option<String>,
@@ -495,6 +508,7 @@ impl WorkflowRow {
             id: self.id,
             name: self.name,
             description: self.description,
+            status: self.status.unwrap_or_else(|| "draft".to_string()),
             nodes,
             edges,
             config,

@@ -38,6 +38,59 @@ impl NodeExecutor for TriggerNode {
     }
 }
 
+/// Cron trigger node -- entry point for cron-based workflows.
+///
+/// Config:
+///   - `schedule`: cron expression (required)
+///   - `timezone`: IANA timezone identifier (optional, defaults to UTC)
+///
+/// Output:
+///   - `triggered_at`: ISO timestamp
+///   - `trigger_type`: always "cron"
+///   - `schedule`: configured schedule
+///   - `timezone`: configured timezone
+pub struct CronTriggerNode;
+
+#[async_trait]
+impl NodeExecutor for CronTriggerNode {
+    fn node_type(&self) -> &'static str {
+        "trigger.cron"
+    }
+
+    fn validate(&self, config: &Value) -> Result<()> {
+        if config
+            .get("schedule")
+            .and_then(|v| v.as_str())
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false)
+        {
+            Ok(())
+        } else {
+            Err(AppError::Validation(
+                "trigger.cron requires 'schedule' in config".into(),
+            ))
+        }
+    }
+
+    async fn execute(
+        &self,
+        _node_id: &str,
+        config: &Value,
+        _context: &ExecutionContext,
+        _services: &ServiceProvider,
+    ) -> Result<Value> {
+        let schedule = config["schedule"].as_str().unwrap_or("0 * * * *").trim();
+        let timezone = config["timezone"].as_str().unwrap_or("UTC").trim();
+
+        Ok(serde_json::json!({
+            "triggered_at": chrono::Utc::now().to_rfc3339(),
+            "trigger_type": "cron",
+            "schedule": schedule,
+            "timezone": timezone,
+        }))
+    }
+}
+
 /// Condition node -- branch execution based on a simple expression.
 ///
 /// Config:

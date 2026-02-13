@@ -4,6 +4,7 @@ import {
   GitFork,
   Repeat,
   Timer,
+  AlarmClock,
   RefreshCw,
   BookOpen,
   GitPullRequest,
@@ -18,6 +19,7 @@ import type { NodeType } from '@/types/workflow';
 
 export const NODE_ICONS: Record<NodeType, LucideIcon> = {
   trigger: Zap,
+  'trigger.cron': AlarmClock,
   condition: GitFork,
   loop: Repeat,
   delay: Timer,

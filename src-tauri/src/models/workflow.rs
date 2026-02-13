@@ -6,12 +6,18 @@ pub struct Workflow {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    #[serde(default = "default_workflow_status")]
+    pub status: String,
     pub nodes: Vec<WorkflowNode>,
     pub edges: Vec<WorkflowEdge>,
     pub config: Option<serde_json::Value>,
     pub version: i32,
     pub created_at: String,
     pub updated_at: String,
+}
+
+fn default_workflow_status() -> String {
+    "draft".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +99,7 @@ mod tests {
 
         assert_eq!(workflow.id, "wf-1");
         assert_eq!(workflow.name, "Save Test Workflow");
+        assert_eq!(workflow.status, "draft");
         assert_eq!(workflow.nodes[0].node_type, "trigger");
         assert_eq!(workflow.edges[0].source_handle.as_deref(), Some("true"));
         assert_eq!(workflow.created_at, "2026-02-13T10:00:00Z");

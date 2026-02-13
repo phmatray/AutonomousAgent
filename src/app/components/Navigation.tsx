@@ -11,7 +11,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { route: 'dashboard', label: 'Dashboard' },
+  { route: 'dashboard', label: 'Workflows' },
   { route: 'backlog', label: 'Backlog' },
   { route: 'editor', label: 'Editor' },
   { route: 'monitoring', label: 'Monitoring' },

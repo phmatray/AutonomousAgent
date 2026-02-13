@@ -36,6 +36,7 @@ export function useWorkflowPersistence({
       const payload = buildWorkflowPayload({
         workflowId: graph.workflowId,
         workflowName: graph.workflowName,
+        workflowStatus: graph.workflowStatus,
         nodes: graph.nodes,
         edges: graph.edges,
       });
@@ -49,6 +50,7 @@ export function useWorkflowPersistence({
           type: 'WORKFLOW_CREATED',
           id: savedWorkflow.id,
           name: savedWorkflow.name,
+          status: savedWorkflow.status ?? 'draft',
         });
         navigate('editor', { id: savedWorkflow.id });
       }
@@ -57,6 +59,7 @@ export function useWorkflowPersistence({
         type: 'WORKFLOW_SAVED',
         id: savedWorkflow.id,
         name: savedWorkflow.name,
+        status: savedWorkflow.status ?? graph.workflowStatus,
       });
       flow.sendFlowEvent({ type: 'SAVE_SUCCESS' });
     } catch (error) {

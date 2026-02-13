@@ -2,6 +2,8 @@ import type { BacklogItem } from '@/types/workflow';
 
 interface BacklogTableProps {
   items: BacklogItem[];
+  selectedItemId?: string | null;
+  onViewDetails: (itemId: string) => void;
   onDelete: (id: string) => void;
   isDeleting: boolean;
 }
@@ -11,7 +13,13 @@ const STATE_STYLES: Record<string, string> = {
   closed: 'bg-purple-900 text-purple-300',
 };
 
-export function BacklogTable({ items, onDelete, isDeleting }: BacklogTableProps) {
+export function BacklogTable({
+  items,
+  selectedItemId,
+  onViewDetails,
+  onDelete,
+  isDeleting,
+}: BacklogTableProps) {
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -33,6 +41,7 @@ export function BacklogTable({ items, onDelete, isDeleting }: BacklogTableProps)
           <tr className="border-b border-gray-700 text-gray-400">
             <th className="px-4 py-3 font-medium" scope="col">#</th>
             <th className="px-4 py-3 font-medium" scope="col">Title</th>
+            <th className="px-4 py-3 font-medium" scope="col">Repository</th>
             <th className="px-4 py-3 font-medium" scope="col">State</th>
             <th className="px-4 py-3 font-medium" scope="col">Labels</th>
             <th className="px-4 py-3 font-medium" scope="col">Linked Workflow</th>
@@ -43,7 +52,9 @@ export function BacklogTable({ items, onDelete, isDeleting }: BacklogTableProps)
           {items.map((item) => (
             <tr
               key={item.id}
-              className="border-b border-gray-800 hover:bg-gray-800/50 transition-colors"
+              className={`border-b border-gray-800 transition-colors ${
+                selectedItemId === item.id ? 'bg-indigo-950/20' : 'hover:bg-gray-800/50'
+              }`}
             >
               <td className="px-4 py-3 text-gray-400 font-mono">
                 {item.issue_number}
@@ -58,6 +69,11 @@ export function BacklogTable({ items, onDelete, isDeleting }: BacklogTableProps)
                 >
                   {item.title}
                 </a>
+              </td>
+              <td className="px-4 py-3">
+                <span className="text-xs font-mono text-gray-300">
+                  {item.owner}/{item.repo}
+                </span>
               </td>
               <td className="px-4 py-3">
                 <span
@@ -91,6 +107,14 @@ export function BacklogTable({ items, onDelete, isDeleting }: BacklogTableProps)
                 )}
               </td>
               <td className="px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => onViewDetails(item.id)}
+                  className="mr-3 text-xs text-indigo-400 hover:text-indigo-300 transition-colors focus:outline-none focus:underline"
+                  aria-label={`View issue #${item.issue_number} details`}
+                >
+                  Details
+                </button>
                 <button
                   type="button"
                   onClick={() => onDelete(item.id)}

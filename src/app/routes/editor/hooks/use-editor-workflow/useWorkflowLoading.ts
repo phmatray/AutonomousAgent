@@ -41,6 +41,7 @@ export function useWorkflowLoading({
           type: 'WORKFLOW_LOADED',
           id: fetchedWorkflow.id,
           name: fetchedWorkflow.name,
+          status: fetchedWorkflow.status ?? 'draft',
         });
       } else if (hasFetchedWorkflow) {
         suppressGraphDirtyRef.current = true;

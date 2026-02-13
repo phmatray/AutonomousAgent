@@ -395,6 +395,7 @@ pub fn create_test_workflow(
         id: id.to_string(),
         name: name.to_string(),
         description: Some(format!("Test workflow: {}", name)),
+        status: "draft".to_string(),
         nodes,
         edges,
         config: None,

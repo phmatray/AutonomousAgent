@@ -3,6 +3,7 @@
 Control-flow nodes shown in the editor:
 
 - `trigger`
+- `trigger.cron`
 - `condition`
 - `loop`
 - `delay`
@@ -19,6 +20,7 @@ Related editor files:
 Runtime documentation:
 
 - `docs/nodes/trigger/README.md`
+- `docs/nodes/trigger-cron/README.md`
 - `docs/nodes/condition/README.md`
 - `docs/nodes/loop/README.md`
 - `docs/nodes/delay/README.md`

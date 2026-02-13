@@ -364,6 +364,7 @@ pub fn build_default_registry() -> NodeRegistry {
 
     // Control flow nodes
     registry.register(control::TriggerNode);
+    registry.register(control::CronTriggerNode);
     registry.register(control::ConditionNode);
     registry.register(control::LoopNode);
     registry.register(control::DelayNode);
@@ -490,6 +491,7 @@ mod tests {
         let registry = build_default_registry();
         let expected = vec![
             "trigger",
+            "trigger.cron",
             "condition",
             "loop",
             "delay",

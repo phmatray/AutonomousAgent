@@ -33,6 +33,9 @@ pub async fn create_workflow(
     if workflow.updated_at.is_empty() {
         workflow.updated_at = chrono::Utc::now().to_rfc3339();
     }
+    if workflow.status.trim().is_empty() {
+        workflow.status = "draft".to_string();
+    }
 
     state.engine.create_workflow(&workflow).await
 }

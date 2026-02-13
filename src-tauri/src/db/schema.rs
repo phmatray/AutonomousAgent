@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS workflows (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',
     nodes TEXT NOT NULL,
     edges TEXT NOT NULL,
     config TEXT,

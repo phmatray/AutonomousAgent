@@ -16,6 +16,7 @@ Every node README follows the same structure:
 | Node Type | Category | Documentation |
 | --- | --- | --- |
 | `trigger` | Control | [docs/nodes/trigger/README.md](trigger/README.md) |
+| `trigger.cron` | Control | [docs/nodes/trigger-cron/README.md](trigger-cron/README.md) |
 | `condition` | Control | [docs/nodes/condition/README.md](condition/README.md) |
 | `loop` | Control | [docs/nodes/loop/README.md](loop/README.md) |
 | `delay` | Control | [docs/nodes/delay/README.md](delay/README.md) |

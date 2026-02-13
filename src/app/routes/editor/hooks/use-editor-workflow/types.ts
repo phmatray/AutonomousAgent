@@ -14,6 +14,7 @@ export interface WorkflowGraphSnapshot {
   edges: WorkflowEdge[];
   workflowId: string | null;
   workflowName: string;
+  workflowStatus: 'draft' | 'published';
   isDirty: boolean;
   selectedNodeId: string | null;
   pendingDeleteNodeId: string | null;
