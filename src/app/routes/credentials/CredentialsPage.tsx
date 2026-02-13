@@ -26,6 +26,7 @@ interface GitHubAuthStatus {
 
 type SaveState = 'idle' | 'success' | 'error';
 type AuditResultFilter = 'all' | 'success' | 'failure';
+type CredentialsTab = 'github' | 'activity' | 'claude';
 const GITHUB_TOKEN_AUTOFILL_STORAGE_KEY = 'credentials.github.token_autofill';
 const CREDENTIAL_AUDIT_FETCH_LIMIT = 200;
 const AUDIT_PAGE_SIZE_OPTIONS = [5, 10, 20, 50] as const;
@@ -103,6 +104,7 @@ function triggerCredentialAuditDownload(events: CredentialAuditEvent[], filters:
 }
 
 export function CredentialsPage() {
+  const [activeTab, setActiveTab] = useState<CredentialsTab>('github');
   const [githubStatus, setGithubStatus] = useState<GitHubAuthStatus | null>(null);
   const [githubStatusError, setGithubStatusError] = useState(false);
   const [isRefreshingGithub, setIsRefreshingGithub] = useState(false);
@@ -515,6 +517,55 @@ export function CredentialsPage() {
         description="Manage encrypted credentials stored in your local database"
       />
 
+      <div className="mb-6">
+        <div
+          className="inline-flex rounded-lg border border-gray-700 bg-gray-900/70 p-1"
+          role="tablist"
+          aria-label="Credentials sections"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'github'}
+            onClick={() => setActiveTab('github')}
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+              activeTab === 'github'
+                ? 'bg-indigo-600 text-white'
+                : 'text-gray-300 hover:text-white hover:bg-gray-800'
+            }`}
+          >
+            GitHub
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'activity'}
+            onClick={() => setActiveTab('activity')}
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+              activeTab === 'activity'
+                ? 'bg-indigo-600 text-white'
+                : 'text-gray-300 hover:text-white hover:bg-gray-800'
+            }`}
+          >
+            Activity
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'claude'}
+            onClick={() => setActiveTab('claude')}
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+              activeTab === 'claude'
+                ? 'bg-indigo-600 text-white'
+                : 'text-gray-300 hover:text-white hover:bg-gray-800'
+            }`}
+          >
+            Claude
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'github' && (
       <section className="bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6" aria-labelledby="github-credentials-heading">
         <h2 id="github-credentials-heading" className="text-lg font-semibold text-white mb-4">
           GitHub Account
@@ -694,7 +745,9 @@ export function CredentialsPage() {
           )}
         </div>
       </section>
+      )}
 
+      {activeTab === 'activity' && (
       <section className="bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6" aria-labelledby="credential-audit-heading">
         <div className="flex items-center justify-between mb-4">
           <h2 id="credential-audit-heading" className="text-lg font-semibold text-white">
@@ -867,7 +920,9 @@ export function CredentialsPage() {
           </>
         )}
       </section>
+      )}
 
+      {activeTab === 'claude' && (
       <section className="bg-gray-800 border border-gray-700 rounded-lg p-6" aria-labelledby="claude-credentials-heading">
         <h2 id="claude-credentials-heading" className="text-lg font-semibold text-white mb-4">
           Claude Account
@@ -971,6 +1026,7 @@ export function CredentialsPage() {
           </div>
         </form>
       </section>
+      )}
 
       <ConfirmDialog
         open={showDeleteGitHubDialog}

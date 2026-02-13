@@ -281,6 +281,8 @@ describe('CredentialsPage', () => {
 
     render(<CredentialsPage />);
 
+    await user.click(screen.getByRole('tab', { name: 'Activity' }));
+
     await waitFor(() => {
       expect(screen.getByText('Showing 1-6 of 6 matching events.')).toBeInTheDocument();
     });
