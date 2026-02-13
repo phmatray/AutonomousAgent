@@ -143,9 +143,12 @@ describe('Editor Store', () => {
       const expectedLabels: Record<NodeType, string> = {
         'trigger.cron': 'Cron Trigger',
         'backlog.syncIssues': 'Sync Issues to Backlog',
+        'backlog.registerPullRequest': 'Register PR in Backlog',
         'github.sync': 'Sync Repository',
         'github.readIssues': 'Read Issues',
+        'github.readPullRequest': 'Read Pull Request',
         'github.createPR': 'Create PR',
+        'github.respondPullRequest': 'Respond to PR',
         'git.worktree': 'Git Worktree',
         'git.branch': 'Git Branch',
         'git.commit': 'Git Commit',

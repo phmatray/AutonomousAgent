@@ -58,11 +58,12 @@ pub async fn delete_workflow(id: String, state: State<'_, AppState>) -> Result<(
 pub async fn execute_workflow(
     workflow_id: String,
     trigger_type: Option<String>,
+    trigger_payload: Option<serde_json::Value>,
     state: State<'_, AppState>,
 ) -> Result<WorkflowExecution> {
     state
         .engine
-        .start_workflow_execution(&workflow_id, trigger_type.as_deref())
+        .start_workflow_execution(&workflow_id, trigger_type.as_deref(), trigger_payload)
         .await
 }
 

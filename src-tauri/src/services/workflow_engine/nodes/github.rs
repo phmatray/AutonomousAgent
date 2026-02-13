@@ -1,4 +1,5 @@
 use crate::errors::{AppError, Result};
+use crate::services::backlog_service::PullRequestBacklogInput;
 use crate::services::workflow_engine::node_registry::{
     ExecutionContext, NodeExecutor, ServiceProvider,
 };
@@ -10,6 +11,39 @@ fn get_required_string(config: &Value, key: &str) -> Result<String> {
         .as_str()
         .ok_or_else(|| AppError::Validation(format!("{} is required and must be a string", key)))
         .map(String::from)
+}
+
+fn get_required_i64(config: &Value, key: &str) -> Result<i64> {
+    match config.get(key) {
+        Some(Value::Number(number)) => number.as_i64().ok_or_else(|| {
+            AppError::Validation(format!("{} is required and must be an integer", key))
+        }),
+        Some(Value::String(value)) => value.trim().parse::<i64>().map_err(|_| {
+            AppError::Validation(format!("{} is required and must be an integer", key))
+        }),
+        _ => Err(AppError::Validation(format!(
+            "{} is required and must be an integer",
+            key
+        ))),
+    }
+}
+
+fn get_optional_string_list(config: &Value, key: &str) -> Vec<String> {
+    match config.get(key) {
+        Some(Value::Array(values)) => values
+            .iter()
+            .filter_map(|value| value.as_str())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect(),
+        Some(Value::String(value)) => value
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string())
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn get_optional_string<'a>(config: &'a Value, key: &str) -> Option<&'a str> {
@@ -329,6 +363,222 @@ impl NodeExecutor for GithubCreatePrNode {
             "number": pr.number,
             "html_url": pr.html_url,
             "title": pr.title,
+        }))
+    }
+}
+
+/// Read pull request details from GitHub.
+///
+/// Config:
+///   - `owner`: repository owner
+///   - `repo`: repository name
+///   - `pr_number`: pull request number
+///
+/// Output:
+///   - `number`: PR number
+///   - `html_url`: PR URL
+///   - `title`: PR title
+///   - `body`: PR body
+///   - `state`: PR state
+///   - `draft`: whether PR is draft
+///   - `author`: PR author login
+///   - `head_branch`: source branch
+///   - `base_branch`: target branch
+pub struct GithubReadPullRequestNode;
+
+#[async_trait]
+impl NodeExecutor for GithubReadPullRequestNode {
+    fn node_type(&self) -> &'static str {
+        "github.readPullRequest"
+    }
+
+    fn validate(&self, config: &Value) -> Result<()> {
+        for field in &["owner", "repo", "pr_number"] {
+            if config.get(field).is_none() {
+                return Err(AppError::Validation(format!(
+                    "github.readPullRequest requires '{}' in config",
+                    field
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    async fn execute(
+        &self,
+        _node_id: &str,
+        config: &Value,
+        context: &ExecutionContext,
+        services: &ServiceProvider,
+    ) -> Result<Value> {
+        let resolved = context.resolve_value(config)?;
+        authenticate_for_config(&resolved, services, true).await?;
+
+        let owner = get_required_string(&resolved, "owner")?;
+        let repo = get_required_string(&resolved, "repo")?;
+        let pr_number = get_required_i64(&resolved, "pr_number")?;
+
+        let pr = services
+            .github
+            .get_pull_request(&owner, &repo, pr_number)
+            .await?;
+
+        Ok(serde_json::json!({
+            "number": pr.number,
+            "html_url": pr.html_url,
+            "title": pr.title,
+            "body": pr.body,
+            "state": pr.state,
+            "draft": pr.draft,
+            "author": pr.author,
+            "head_branch": pr.head_branch,
+            "base_branch": pr.base_branch,
+        }))
+    }
+}
+
+/// Register or update a pull request as a backlog item.
+///
+/// Config:
+///   - `owner`: repository owner
+///   - `repo`: repository name
+///   - `pr_number`: pull request number
+///   - `title`: pull request title
+///   - `body`: optional pull request body
+///   - `state`: optional pull request state (defaults to "open")
+///   - `html_url`: optional pull request URL
+///   - `labels`: optional labels array or comma-separated string
+///   - `assignees`: optional assignees array or comma-separated string
+///
+/// Output:
+///   - `id`: backlog item id
+///   - `owner`: repository owner
+///   - `repo`: repository name
+///   - `issue_number`: pull request number
+///   - `title`: pull request title
+///   - `html_url`: pull request URL
+///   - `state`: pull request state
+pub struct BacklogRegisterPullRequestNode;
+
+#[async_trait]
+impl NodeExecutor for BacklogRegisterPullRequestNode {
+    fn node_type(&self) -> &'static str {
+        "backlog.registerPullRequest"
+    }
+
+    fn validate(&self, config: &Value) -> Result<()> {
+        for field in &["owner", "repo", "pr_number", "title"] {
+            if config.get(field).is_none() {
+                return Err(AppError::Validation(format!(
+                    "backlog.registerPullRequest requires '{}' in config",
+                    field
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    async fn execute(
+        &self,
+        _node_id: &str,
+        config: &Value,
+        context: &ExecutionContext,
+        services: &ServiceProvider,
+    ) -> Result<Value> {
+        let resolved = context.resolve_value(config)?;
+        let owner = get_required_string(&resolved, "owner")?;
+        let repo = get_required_string(&resolved, "repo")?;
+        let pr_number = get_required_i64(&resolved, "pr_number")?;
+        let title = get_required_string(&resolved, "title")?;
+        let body = get_optional_string(&resolved, "body").map(|value| value.to_string());
+        let state = get_optional_string(&resolved, "state").unwrap_or("open");
+        let html_url = get_optional_string(&resolved, "html_url").unwrap_or("");
+        let labels = get_optional_string_list(&resolved, "labels");
+        let assignees = get_optional_string_list(&resolved, "assignees");
+
+        let backlog_item = services
+            .backlog
+            .sync_pull_request_to_backlog(PullRequestBacklogInput {
+                owner,
+                repo,
+                pr_number,
+                title,
+                body,
+                state: state.to_string(),
+                html_url: html_url.to_string(),
+                labels,
+                assignees,
+            })
+            .await?;
+
+        Ok(serde_json::json!({
+            "id": backlog_item.id,
+            "owner": backlog_item.owner,
+            "repo": backlog_item.repo,
+            "issue_number": backlog_item.issue_number,
+            "title": backlog_item.title,
+            "html_url": backlog_item.html_url,
+            "state": backlog_item.state,
+        }))
+    }
+}
+
+/// Post a response comment to a pull request.
+///
+/// Config:
+///   - `owner`: repository owner
+///   - `repo`: repository name
+///   - `pr_number`: pull request number
+///   - `body`: markdown comment body
+///
+/// Output:
+///   - `comment_id`: created comment id
+///   - `html_url`: URL to the comment
+///   - `body`: comment body
+pub struct GithubRespondPullRequestNode;
+
+#[async_trait]
+impl NodeExecutor for GithubRespondPullRequestNode {
+    fn node_type(&self) -> &'static str {
+        "github.respondPullRequest"
+    }
+
+    fn validate(&self, config: &Value) -> Result<()> {
+        for field in &["owner", "repo", "pr_number", "body"] {
+            if config.get(field).is_none() {
+                return Err(AppError::Validation(format!(
+                    "github.respondPullRequest requires '{}' in config",
+                    field
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    async fn execute(
+        &self,
+        _node_id: &str,
+        config: &Value,
+        context: &ExecutionContext,
+        services: &ServiceProvider,
+    ) -> Result<Value> {
+        let resolved = context.resolve_value(config)?;
+        authenticate_for_config(&resolved, services, true).await?;
+
+        let owner = get_required_string(&resolved, "owner")?;
+        let repo = get_required_string(&resolved, "repo")?;
+        let pr_number = get_required_i64(&resolved, "pr_number")?;
+        let body = get_required_string(&resolved, "body")?;
+
+        let comment = services
+            .github
+            .create_pull_request_comment(&owner, &repo, pr_number, &body)
+            .await?;
+
+        Ok(serde_json::json!({
+            "comment_id": comment.id,
+            "html_url": comment.html_url,
+            "body": comment.body,
         }))
     }
 }

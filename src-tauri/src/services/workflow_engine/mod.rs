@@ -7,7 +7,7 @@ pub mod state_machine;
 
 use crate::errors::{AppError, Result};
 use crate::models::workflow::{Workflow, WorkflowExecution, WorkflowSchedule};
-use executor::{RetryPolicy, RuntimeNodeEvent, WorkflowExecutionResult};
+use executor::{ExecutionRuntimeOptions, RetryPolicy, RuntimeNodeEvent, WorkflowExecutionResult};
 use node_registry::{build_default_registry, ClaudeProvider, NodeRegistry, ServiceProvider};
 use preflight::WorkflowPreflightResult;
 use scheduler::{ScheduledWorkflow, Scheduler};
@@ -400,6 +400,7 @@ impl WorkflowEngine {
         &self,
         workflow_id: &str,
         trigger_type: Option<&str>,
+        trigger_payload: Option<serde_json::Value>,
     ) -> Result<WorkflowExecutionResult> {
         let workflow = self
             .get_workflow(workflow_id)
@@ -418,13 +419,23 @@ impl WorkflowEngine {
             .await?;
 
         // Run the DAG executor
+        let trigger = trigger_type.unwrap_or("manual");
+        let run_context = Some(json!({
+            "trigger": {
+                "type": trigger,
+                "payload": trigger_payload.unwrap_or(serde_json::Value::Null),
+            }
+        }));
         let result = executor::execute_workflow(
             &execution_id,
             &workflow,
             self.registry.as_ref(),
             services,
             &self.retry_policy,
-            None,
+            ExecutionRuntimeOptions {
+                run_context,
+                runtime_event_sender: None,
+            },
         )
         .await;
 
@@ -439,6 +450,7 @@ impl WorkflowEngine {
         self: &Arc<Self>,
         workflow_id: &str,
         trigger_type: Option<&str>,
+        trigger_payload: Option<serde_json::Value>,
     ) -> Result<WorkflowExecution> {
         if self.is_workflow_running(workflow_id).await {
             return Err(AppError::Validation(format!(
@@ -462,6 +474,12 @@ impl WorkflowEngine {
 
         let execution_id = uuid::Uuid::new_v4().to_string();
         let trigger = trigger_type.unwrap_or("manual");
+        let run_context = Some(json!({
+            "trigger": {
+                "type": trigger,
+                "payload": trigger_payload.unwrap_or(serde_json::Value::Null),
+            }
+        }));
         let started_at = self
             .record_execution_start(&execution_id, workflow_id, trigger)
             .await?;
@@ -497,8 +515,11 @@ impl WorkflowEngine {
                 engine.registry.as_ref(),
                 &services,
                 &engine.retry_policy,
+                ExecutionRuntimeOptions {
+                    run_context,
+                    runtime_event_sender: Some(runtime_event_tx),
+                },
                 cancellation_flag,
-                Some(runtime_event_tx),
             )
             .await;
             let _ = runtime_task.await;
@@ -691,8 +712,11 @@ impl WorkflowEngine {
                 engine.registry.as_ref(),
                 &services,
                 &engine.retry_policy,
+                ExecutionRuntimeOptions {
+                    run_context: None,
+                    runtime_event_sender: Some(runtime_event_tx),
+                },
                 cancellation_flag,
-                Some(runtime_event_tx),
             )
             .await;
             let _ = runtime_task.await;

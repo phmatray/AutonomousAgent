@@ -87,6 +87,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn trigger_node_extracts_payload_metadata() {
+        let node = TriggerNode;
+        let services = test_services();
+        let ctx = ExecutionContext::new(json!({
+            "trigger": {
+                "payload": {
+                    "action": "opened",
+                    "repository": {
+                        "owner": { "login": "acme" },
+                        "name": "agent-repo"
+                    },
+                    "pull_request": { "number": 37 }
+                }
+            }
+        }));
+        let config = json!({"trigger_type": "webhook"});
+
+        let result = node
+            .execute("trigger1", &config, &ctx, &services)
+            .await
+            .unwrap();
+
+        assert_eq!(result["action"], "opened");
+        assert_eq!(result["owner"], "acme");
+        assert_eq!(result["repo"], "agent-repo");
+        assert_eq!(result["pr_number"], 37);
+        assert_eq!(result["payload"]["pull_request"]["number"], 37);
+    }
+
+    #[tokio::test]
     async fn trigger_node_returns_rfc3339_timestamp() {
         let node = TriggerNode;
         let services = test_services();

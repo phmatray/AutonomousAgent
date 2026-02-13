@@ -5,6 +5,36 @@ use crate::services::workflow_engine::node_registry::{
 use async_trait::async_trait;
 use serde_json::Value;
 
+fn extract_trigger_metadata(
+    payload: Option<&Value>,
+) -> (Option<String>, Option<String>, Option<String>, Option<i64>) {
+    let Some(payload) = payload else {
+        return (None, None, None, None);
+    };
+
+    let action = payload
+        .get("action")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    let owner = payload
+        .get("repository")
+        .and_then(|repo| repo.get("owner"))
+        .and_then(|owner| owner.get("login"))
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    let repo = payload
+        .get("repository")
+        .and_then(|repo| repo.get("name"))
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    let pr_number = payload
+        .get("pull_request")
+        .and_then(|pull_request| pull_request.get("number"))
+        .and_then(|value| value.as_i64());
+
+    (action, owner, repo, pr_number)
+}
+
 /// Trigger node -- the entry point of a workflow.
 ///
 /// Config:
@@ -14,6 +44,11 @@ use serde_json::Value;
 /// Output:
 ///   - `triggered_at`: ISO timestamp
 ///   - `trigger_type`: the trigger type
+///   - `payload`: trigger payload when provided
+///   - `action`: trigger action (ex: "opened")
+///   - `owner`: repository owner extracted from payload
+///   - `repo`: repository extracted from payload
+///   - `pr_number`: pull request number extracted from payload
 pub struct TriggerNode;
 
 #[async_trait]
@@ -26,14 +61,26 @@ impl NodeExecutor for TriggerNode {
         &self,
         _node_id: &str,
         config: &Value,
-        _context: &ExecutionContext,
+        context: &ExecutionContext,
         _services: &ServiceProvider,
     ) -> Result<Value> {
         let trigger_type = config["trigger_type"].as_str().unwrap_or("manual");
+        let payload = context
+            .config
+            .get("trigger")
+            .and_then(|trigger| trigger.get("payload"))
+            .cloned()
+            .or_else(|| config.get("payload").cloned());
+        let (action, owner, repo, pr_number) = extract_trigger_metadata(payload.as_ref());
 
         Ok(serde_json::json!({
             "triggered_at": chrono::Utc::now().to_rfc3339(),
             "trigger_type": trigger_type,
+            "payload": payload.unwrap_or(Value::Null),
+            "action": action,
+            "owner": owner,
+            "repo": repo,
+            "pr_number": pr_number,
         }))
     }
 }

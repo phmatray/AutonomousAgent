@@ -4,8 +4,11 @@ GitHub nodes shown in the editor:
 
 - `github.sync`
 - `github.readIssues`
+- `github.readPullRequest`
 - `backlog.syncIssues`
+- `backlog.registerPullRequest`
 - `github.createPR`
+- `github.respondPullRequest`
 
 Related editor files:
 

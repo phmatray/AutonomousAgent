@@ -21,7 +21,7 @@ interface WorkflowCommandPayloads {
   create_workflow: { workflow: Workflow };
   update_workflow: { id: string; workflow: Partial<Workflow> };
   delete_workflow: { id: string };
-  execute_workflow: { workflowId: string; triggerType?: string };
+  execute_workflow: { workflowId: string; triggerType?: string; triggerPayload?: unknown };
   preflight_workflow: { workflow: Workflow };
   list_executions: { workflowId?: string };
   get_execution_logs: { executionId: string };
@@ -84,8 +84,9 @@ export async function deleteWorkflow(id: string): Promise<void> {
 export async function executeWorkflow(
   workflowId: string,
   triggerType?: string,
+  triggerPayload?: unknown,
 ): Promise<WorkflowExecution> {
-  return invokeWorkflowCommand('execute_workflow', { workflowId, triggerType });
+  return invokeWorkflowCommand('execute_workflow', { workflowId, triggerType, triggerPayload });
 }
 
 export async function preflightWorkflow(

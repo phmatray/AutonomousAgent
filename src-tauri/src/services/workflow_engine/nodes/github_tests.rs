@@ -5,7 +5,9 @@ mod tests {
         ClaudeProvider, ExecutionContext, NodeExecutor, ServiceProvider,
     };
     use crate::services::workflow_engine::nodes::github::{
-        BacklogSyncIssuesNode, GithubCreatePrNode, GithubReadIssuesNode, GithubSyncNode,
+        BacklogRegisterPullRequestNode, BacklogSyncIssuesNode, GithubCreatePrNode,
+        GithubReadIssuesNode, GithubReadPullRequestNode, GithubRespondPullRequestNode,
+        GithubSyncNode,
     };
     use crate::services::{GitHubClient, GitService, StorageService};
     use serde_json::json;
@@ -777,5 +779,137 @@ mod tests {
             "Error should not be about missing 'body'; got: {}",
             err_msg
         );
+    }
+
+    // =========================================================================
+    // GithubReadPullRequestNode
+    // =========================================================================
+
+    #[test]
+    fn test_github_read_pull_request_node_type() {
+        let node = GithubReadPullRequestNode;
+        assert_eq!(node.node_type(), "github.readPullRequest");
+    }
+
+    #[test]
+    fn test_github_read_pull_request_validate_success() {
+        let node = GithubReadPullRequestNode;
+        let config = json!({
+            "owner": "test-owner",
+            "repo": "test-repo",
+            "pr_number": 42
+        });
+        assert!(node.validate(&config).is_ok());
+    }
+
+    #[test]
+    fn test_github_read_pull_request_validate_missing_pr_number() {
+        let node = GithubReadPullRequestNode;
+        let config = json!({
+            "owner": "test-owner",
+            "repo": "test-repo"
+        });
+        assert!(node.validate(&config).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_github_read_pull_request_execute_unauthenticated_fails() {
+        let node = GithubReadPullRequestNode;
+        let config = json!({
+            "owner": "test-owner",
+            "repo": "test-repo",
+            "pr_number": 42
+        });
+        let context = test_context();
+        let services = test_services().await;
+
+        let result = node
+            .execute("read-pr-1", &config, &context, &services)
+            .await;
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // BacklogRegisterPullRequestNode
+    // =========================================================================
+
+    #[test]
+    fn test_backlog_register_pr_node_type() {
+        let node = BacklogRegisterPullRequestNode;
+        assert_eq!(node.node_type(), "backlog.registerPullRequest");
+    }
+
+    #[test]
+    fn test_backlog_register_pr_validate_success() {
+        let node = BacklogRegisterPullRequestNode;
+        let config = json!({
+            "owner": "test-owner",
+            "repo": "test-repo",
+            "pr_number": 42,
+            "title": "Fix regression"
+        });
+        assert!(node.validate(&config).is_ok());
+    }
+
+    #[test]
+    fn test_backlog_register_pr_validate_missing_title() {
+        let node = BacklogRegisterPullRequestNode;
+        let config = json!({
+            "owner": "test-owner",
+            "repo": "test-repo",
+            "pr_number": 42
+        });
+        assert!(node.validate(&config).is_err());
+    }
+
+    // =========================================================================
+    // GithubRespondPullRequestNode
+    // =========================================================================
+
+    #[test]
+    fn test_github_respond_pr_node_type() {
+        let node = GithubRespondPullRequestNode;
+        assert_eq!(node.node_type(), "github.respondPullRequest");
+    }
+
+    #[test]
+    fn test_github_respond_pr_validate_success() {
+        let node = GithubRespondPullRequestNode;
+        let config = json!({
+            "owner": "test-owner",
+            "repo": "test-repo",
+            "pr_number": 42,
+            "body": "Thanks for the contribution"
+        });
+        assert!(node.validate(&config).is_ok());
+    }
+
+    #[test]
+    fn test_github_respond_pr_validate_missing_body() {
+        let node = GithubRespondPullRequestNode;
+        let config = json!({
+            "owner": "test-owner",
+            "repo": "test-repo",
+            "pr_number": 42
+        });
+        assert!(node.validate(&config).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_github_respond_pr_execute_unauthenticated_fails() {
+        let node = GithubRespondPullRequestNode;
+        let config = json!({
+            "owner": "test-owner",
+            "repo": "test-repo",
+            "pr_number": 42,
+            "body": "Automated review posted"
+        });
+        let context = test_context();
+        let services = test_services().await;
+
+        let result = node
+            .execute("respond-pr-1", &config, &context, &services)
+            .await;
+        assert!(result.is_err());
     }
 }

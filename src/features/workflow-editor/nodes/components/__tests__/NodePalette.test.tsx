@@ -23,11 +23,12 @@ describe('NodePalette', () => {
     expect(screen.getByText('Claude AI')).toBeInTheDocument();
   });
 
-  it('renders all 15 palette items', () => {
+  it('renders all 18 palette items', () => {
     render(<NodePalette onDragStart={onDragStart} />);
     const expectedLabels = [
       'Trigger', 'Cron Trigger', 'Condition', 'Loop', 'Delay',
-      'Sync Repository', 'Read Issues', 'Sync Issues to Backlog', 'Create PR',
+      'Sync Repository', 'Read Issues', 'Read Pull Request', 'Sync Issues to Backlog',
+      'Register PR in Backlog', 'Create PR', 'Respond to PR',
       'Git Worktree', 'Git Branch', 'Git Commit',
       'Claude Analyze', 'Claude Plan', 'Claude Apply',
     ];
@@ -106,7 +107,7 @@ describe('NodePalette', () => {
     render(<NodePalette onDragStart={onDragStart} />);
     const githubList = screen.getByRole('list', { name: 'GitHub nodes' });
     const items = within(githubList).getAllByRole('listitem');
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(7);
   });
 
   it('groups git nodes together', () => {

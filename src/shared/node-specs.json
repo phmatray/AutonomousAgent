@@ -23,7 +23,12 @@
       ],
       "outputs": [
         { "name": "triggered_at", "description": "ISO timestamp when the workflow was triggered", "type": "string" },
-        { "name": "trigger_type", "description": "The type of trigger that started execution", "type": "string" }
+        { "name": "trigger_type", "description": "The type of trigger that started execution", "type": "string" },
+        { "name": "payload", "description": "Raw trigger payload for webhook-style runs", "type": "object" },
+        { "name": "action", "description": "Action extracted from payload (for example, \"opened\")", "type": "string" },
+        { "name": "owner", "description": "Repository owner extracted from payload", "type": "string" },
+        { "name": "repo", "description": "Repository name extracted from payload", "type": "string" },
+        { "name": "pr_number", "description": "Pull request number extracted from payload", "type": "number" }
       ]
     },
     {
@@ -241,6 +246,57 @@
       ]
     },
     {
+      "type": "github.readPullRequest",
+      "label": "Read Pull Request",
+      "category": "github",
+      "inputMode": "single",
+      "outputMode": "single",
+      "fields": [
+        {
+          "key": "credential_id",
+          "label": "Credentials",
+          "type": "select",
+          "required": false,
+          "description": "GitHub account credentials to use for this node"
+        },
+        {
+          "key": "owner",
+          "label": "Owner",
+          "type": "template",
+          "required": true,
+          "placeholder": "{{trigger.owner}}",
+          "description": "Repository owner (supports template references)"
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "type": "template",
+          "required": true,
+          "placeholder": "{{trigger.repo}}",
+          "description": "Repository name (supports template references)"
+        },
+        {
+          "key": "pr_number",
+          "label": "PR Number",
+          "type": "template",
+          "required": true,
+          "placeholder": "{{trigger.pr_number}}",
+          "description": "Pull request number (supports template references)"
+        }
+      ],
+      "outputs": [
+        { "name": "number", "description": "Pull request number", "type": "number" },
+        { "name": "html_url", "description": "URL to the pull request on GitHub", "type": "string" },
+        { "name": "title", "description": "Pull request title", "type": "string" },
+        { "name": "body", "description": "Pull request description/body", "type": "string" },
+        { "name": "state", "description": "Current pull request state", "type": "string" },
+        { "name": "draft", "description": "Whether the pull request is draft", "type": "boolean" },
+        { "name": "author", "description": "Pull request author login", "type": "string" },
+        { "name": "head_branch", "description": "Source branch for the pull request", "type": "string" },
+        { "name": "base_branch", "description": "Target branch for the pull request", "type": "string" }
+      ]
+    },
+    {
       "type": "backlog.syncIssues",
       "label": "Sync Issues to Backlog",
       "category": "github",
@@ -276,6 +332,96 @@
         { "name": "repo", "description": "Repository name", "type": "string" },
         { "name": "count", "description": "Number of issues synced into backlog", "type": "number" },
         { "name": "items", "description": "Synced backlog items for the repository", "type": "array" }
+      ]
+    },
+    {
+      "type": "backlog.registerPullRequest",
+      "label": "Register PR in Backlog",
+      "category": "github",
+      "inputMode": "single",
+      "outputMode": "single",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "type": "template",
+          "required": true,
+          "placeholder": "{{trigger.owner}}",
+          "description": "Repository owner (supports template references)"
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "type": "template",
+          "required": true,
+          "placeholder": "{{trigger.repo}}",
+          "description": "Repository name (supports template references)"
+        },
+        {
+          "key": "pr_number",
+          "label": "PR Number",
+          "type": "template",
+          "required": true,
+          "placeholder": "{{readPullRequest.number}}",
+          "description": "Pull request number to register"
+        },
+        {
+          "key": "title",
+          "label": "Title",
+          "type": "template",
+          "required": true,
+          "placeholder": "{{readPullRequest.title}}",
+          "description": "Backlog title (usually PR title)"
+        },
+        {
+          "key": "body",
+          "label": "Body",
+          "type": "template",
+          "required": false,
+          "placeholder": "{{readPullRequest.body}}",
+          "description": "Backlog body/description"
+        },
+        {
+          "key": "state",
+          "label": "State",
+          "type": "template",
+          "required": false,
+          "placeholder": "open",
+          "description": "Backlog state (defaults to open)"
+        },
+        {
+          "key": "html_url",
+          "label": "PR URL",
+          "type": "template",
+          "required": false,
+          "placeholder": "{{readPullRequest.html_url}}",
+          "description": "Canonical URL linked in backlog"
+        },
+        {
+          "key": "labels",
+          "label": "Labels",
+          "type": "template",
+          "required": false,
+          "placeholder": "bug,needs-review",
+          "description": "Optional labels (array or comma-separated string)"
+        },
+        {
+          "key": "assignees",
+          "label": "Assignees",
+          "type": "template",
+          "required": false,
+          "placeholder": "octocat",
+          "description": "Optional assignees (array or comma-separated string)"
+        }
+      ],
+      "outputs": [
+        { "name": "id", "description": "Backlog item ID", "type": "string" },
+        { "name": "owner", "description": "Repository owner", "type": "string" },
+        { "name": "repo", "description": "Repository name", "type": "string" },
+        { "name": "issue_number", "description": "Stored PR number", "type": "number" },
+        { "name": "title", "description": "Stored backlog title", "type": "string" },
+        { "name": "html_url", "description": "Stored URL", "type": "string" },
+        { "name": "state", "description": "Stored state", "type": "string" }
       ]
     },
     {
@@ -346,6 +492,59 @@
         { "name": "number", "description": "Pull request number", "type": "number" },
         { "name": "html_url", "description": "URL to the pull request on GitHub", "type": "string" },
         { "name": "title", "description": "Pull request title", "type": "string" }
+      ]
+    },
+    {
+      "type": "github.respondPullRequest",
+      "label": "Respond to PR",
+      "category": "github",
+      "inputMode": "single",
+      "outputMode": "single",
+      "fields": [
+        {
+          "key": "credential_id",
+          "label": "Credentials",
+          "type": "select",
+          "required": false,
+          "description": "GitHub account credentials to use for this node"
+        },
+        {
+          "key": "owner",
+          "label": "Owner",
+          "type": "template",
+          "required": true,
+          "placeholder": "{{trigger.owner}}",
+          "description": "Repository owner (supports template references)"
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "type": "template",
+          "required": true,
+          "placeholder": "{{trigger.repo}}",
+          "description": "Repository name (supports template references)"
+        },
+        {
+          "key": "pr_number",
+          "label": "PR Number",
+          "type": "template",
+          "required": true,
+          "placeholder": "{{readPullRequest.number}}",
+          "description": "Pull request number to comment on"
+        },
+        {
+          "key": "body",
+          "label": "Response Body",
+          "type": "template",
+          "required": true,
+          "placeholder": "{{claudeReview.analysis}}",
+          "description": "Markdown comment to post back to the pull request"
+        }
+      ],
+      "outputs": [
+        { "name": "comment_id", "description": "Created PR comment ID", "type": "number" },
+        { "name": "html_url", "description": "URL to the created comment", "type": "string" },
+        { "name": "body", "description": "Posted comment body", "type": "string" }
       ]
     },
     {

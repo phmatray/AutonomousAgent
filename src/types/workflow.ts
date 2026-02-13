@@ -3,9 +3,12 @@
 export type NodeType =
   | 'trigger.cron'
   | 'backlog.syncIssues'
+  | 'backlog.registerPullRequest'
   | 'github.sync'
   | 'github.readIssues'
+  | 'github.readPullRequest'
   | 'github.createPR'
+  | 'github.respondPullRequest'
   | 'git.worktree'
   | 'git.branch'
   | 'git.commit'

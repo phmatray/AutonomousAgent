@@ -39,6 +39,26 @@ pub struct PullRequestInfo {
     pub title: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullRequestDetails {
+    pub number: i64,
+    pub html_url: String,
+    pub title: String,
+    pub body: Option<String>,
+    pub state: String,
+    pub draft: bool,
+    pub author: Option<String>,
+    pub head_branch: String,
+    pub base_branch: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullRequestComment {
+    pub id: i64,
+    pub html_url: String,
+    pub body: String,
+}
+
 pub struct GitHubClient {
     client: Arc<RwLock<Option<Octocrab>>>,
     authenticated_user: Arc<RwLock<Option<GithubUser>>>,
@@ -252,5 +272,75 @@ impl GitHubClient {
             .to_string();
 
         Ok(sha)
+    }
+
+    pub async fn get_pull_request(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: i64,
+    ) -> Result<PullRequestDetails> {
+        let client = self.get_client().await?;
+        let route = format!("/repos/{}/{}/pulls/{}", owner, repo, pr_number);
+
+        let pr: serde_json::Value = client
+            .get(route, None::<&()>)
+            .await
+            .map_err(|e| AppError::GitHub(format!("Failed to get pull request: {}", e)))?;
+
+        let title = pr["title"]
+            .as_str()
+            .ok_or_else(|| AppError::GitHub("Missing pull request title".to_string()))?
+            .to_string();
+
+        Ok(PullRequestDetails {
+            number: pr["number"].as_i64().unwrap_or(pr_number),
+            html_url: pr["html_url"].as_str().unwrap_or_default().to_string(),
+            title,
+            body: pr["body"].as_str().map(|value| value.to_string()),
+            state: pr["state"].as_str().unwrap_or("open").to_string(),
+            draft: pr["draft"].as_bool().unwrap_or(false),
+            author: pr["user"]["login"].as_str().map(|value| value.to_string()),
+            head_branch: pr["head"]["ref"].as_str().unwrap_or_default().to_string(),
+            base_branch: pr["base"]["ref"].as_str().unwrap_or_default().to_string(),
+        })
+    }
+
+    pub async fn create_pull_request_comment(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: i64,
+        body: &str,
+    ) -> Result<PullRequestComment> {
+        let body = body.trim();
+        if body.is_empty() {
+            return Err(AppError::Validation(
+                "Pull request comment body cannot be empty".to_string(),
+            ));
+        }
+
+        let client = self.get_client().await?;
+        let route = format!("/repos/{}/{}/issues/{}/comments", owner, repo, pr_number);
+
+        let response: serde_json::Value = client
+            .post(route, Some(&serde_json::json!({ "body": body })))
+            .await
+            .map_err(|e| {
+                AppError::GitHub(format!("Failed to create pull request comment: {}", e))
+            })?;
+
+        let id = response["id"]
+            .as_i64()
+            .ok_or_else(|| AppError::GitHub("Missing comment ID in GitHub response".to_string()))?;
+
+        Ok(PullRequestComment {
+            id,
+            html_url: response["html_url"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            body: response["body"].as_str().unwrap_or(body).to_string(),
+        })
     }
 }

@@ -157,6 +157,7 @@ describe('workflow API', () => {
       expect(mockInvoke).toHaveBeenCalledWith('execute_workflow', {
         workflowId: 'wf-1',
         triggerType: 'manual',
+        triggerPayload: undefined,
       });
       expect(result).toEqual(mockExecution);
     });
@@ -169,6 +170,25 @@ describe('workflow API', () => {
       expect(mockInvoke).toHaveBeenCalledWith('execute_workflow', {
         workflowId: 'wf-1',
         triggerType: undefined,
+        triggerPayload: undefined,
+      });
+    });
+
+    it('passes trigger payload when provided', async () => {
+      mockInvoke.mockResolvedValueOnce(mockExecution);
+
+      await executeWorkflow('wf-1', 'webhook', {
+        action: 'opened',
+        pull_request: { number: 123 },
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith('execute_workflow', {
+        workflowId: 'wf-1',
+        triggerType: 'webhook',
+        triggerPayload: {
+          action: 'opened',
+          pull_request: { number: 123 },
+        },
       });
     });
 

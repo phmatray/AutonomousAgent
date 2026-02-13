@@ -16,6 +16,19 @@ pub struct BacklogService {
     db_pool: Arc<RwLock<Option<SqlitePool>>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct PullRequestBacklogInput {
+    pub owner: String,
+    pub repo: String,
+    pub pr_number: i64,
+    pub title: String,
+    pub body: Option<String>,
+    pub state: String,
+    pub html_url: String,
+    pub labels: Vec<String>,
+    pub assignees: Vec<String>,
+}
+
 impl BacklogService {
     pub fn new(db_pool: Arc<RwLock<Option<SqlitePool>>>) -> Self {
         Self { db_pool }
@@ -101,6 +114,25 @@ impl BacklogService {
         Ok(row.map(|r| r.into_backlog_item()))
     }
 
+    pub async fn get_backlog_item_by_issue_number(
+        &self,
+        owner: &str,
+        repo: &str,
+        issue_number: i64,
+    ) -> Result<Option<BacklogItem>> {
+        let pool = self.get_pool().await?;
+        let row = sqlx::query_as::<_, BacklogItemRow>(
+            "SELECT id, owner, repo, issue_number, title, body, state, labels, assignees, html_url, linked_workflow_id, resolution_guidelines_md, triage_status, priority, effort, impact, rank, synced_at, created_at, updated_at FROM backlog_items WHERE owner = ? AND repo = ? AND issue_number = ?",
+        )
+        .bind(owner)
+        .bind(repo)
+        .bind(issue_number)
+        .fetch_optional(&pool)
+        .await?;
+
+        Ok(row.map(|r| r.into_backlog_item()))
+    }
+
     pub async fn sync_issues_to_backlog(
         &self,
         owner: &str,
@@ -154,6 +186,67 @@ impl BacklogService {
             ..Default::default()
         };
         self.list_backlog_items(&filters).await
+    }
+
+    pub async fn sync_pull_request_to_backlog(
+        &self,
+        input: PullRequestBacklogInput,
+    ) -> Result<BacklogItem> {
+        let pool = self.get_pool().await?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let owner = input.owner.as_str();
+        let repo = input.repo.as_str();
+        let pr_number = input.pr_number;
+        let title = input.title.as_str();
+        let body = input.body.as_deref();
+        let state = input.state.as_str();
+        let html_url = input.html_url.as_str();
+        let id = format!("{}/{}/{}", owner, repo, pr_number);
+        let labels_json = serde_json::to_string(&input.labels)?;
+        let assignees_json = serde_json::to_string(&input.assignees)?;
+        let pr_url = if html_url.trim().is_empty() {
+            format!("https://github.com/{}/{}/pull/{}", owner, repo, pr_number)
+        } else {
+            html_url.to_string()
+        };
+
+        sqlx::query(
+            r#"INSERT INTO backlog_items (id, owner, repo, issue_number, title, body, state, labels, assignees, html_url, synced_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(owner, repo, issue_number) DO UPDATE SET
+                title = excluded.title,
+                body = excluded.body,
+                state = excluded.state,
+                labels = excluded.labels,
+                assignees = excluded.assignees,
+                html_url = excluded.html_url,
+                synced_at = excluded.synced_at,
+                updated_at = excluded.updated_at"#,
+        )
+        .bind(&id)
+        .bind(owner)
+        .bind(repo)
+        .bind(pr_number)
+        .bind(title)
+        .bind(body)
+        .bind(state)
+        .bind(&labels_json)
+        .bind(&assignees_json)
+        .bind(&pr_url)
+        .bind(&now)
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await?;
+
+        self.get_backlog_item_by_issue_number(owner, repo, pr_number)
+            .await?
+            .ok_or_else(|| {
+                AppError::Validation(format!(
+                    "Backlog item not found after syncing PR #{}",
+                    pr_number
+                ))
+            })
     }
 
     pub async fn link_to_workflow(&self, backlog_item_id: &str, workflow_id: &str) -> Result<()> {

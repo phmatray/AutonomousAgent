@@ -352,6 +352,9 @@ pub fn build_default_registry() -> NodeRegistry {
     registry.register(github::GithubReadIssuesNode);
     registry.register(github::GithubCreatePrNode);
     registry.register(github::BacklogSyncIssuesNode);
+    registry.register(github::GithubReadPullRequestNode);
+    registry.register(github::BacklogRegisterPullRequestNode);
+    registry.register(github::GithubRespondPullRequestNode);
 
     // Git nodes
     registry.register(git::GitWorktreeNode);
@@ -500,6 +503,9 @@ mod tests {
             "github.readIssues",
             "github.createPR",
             "backlog.syncIssues",
+            "github.readPullRequest",
+            "backlog.registerPullRequest",
+            "github.respondPullRequest",
             "git.worktree",
             "git.branch",
             "git.commit",

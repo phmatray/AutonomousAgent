@@ -92,6 +92,12 @@ pub struct RuntimeNodeEvent {
     pub error: Option<String>,
 }
 
+/// Runtime options that vary per execution invocation.
+pub struct ExecutionRuntimeOptions {
+    pub run_context: Option<Value>,
+    pub runtime_event_sender: Option<UnboundedSender<RuntimeNodeEvent>>,
+}
+
 /// Adjacency information built from the workflow definition.
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -364,7 +370,7 @@ pub async fn execute_workflow(
     registry: &NodeRegistry,
     services: &ServiceProvider,
     retry_policy: &RetryPolicy,
-    runtime_event_sender: Option<UnboundedSender<RuntimeNodeEvent>>,
+    runtime_options: ExecutionRuntimeOptions,
 ) -> WorkflowExecutionResult {
     execute_workflow_inner(
         execution_id,
@@ -372,8 +378,8 @@ pub async fn execute_workflow(
         registry,
         services,
         retry_policy,
+        runtime_options,
         None,
-        runtime_event_sender,
     )
     .await
 }
@@ -385,8 +391,8 @@ pub async fn execute_workflow_cancellable(
     registry: &NodeRegistry,
     services: &ServiceProvider,
     retry_policy: &RetryPolicy,
+    runtime_options: ExecutionRuntimeOptions,
     cancellation_flag: Arc<AtomicBool>,
-    runtime_event_sender: Option<UnboundedSender<RuntimeNodeEvent>>,
 ) -> WorkflowExecutionResult {
     execute_workflow_inner(
         execution_id,
@@ -394,8 +400,8 @@ pub async fn execute_workflow_cancellable(
         registry,
         services,
         retry_policy,
+        runtime_options,
         Some(cancellation_flag),
-        runtime_event_sender,
     )
     .await
 }
@@ -412,8 +418,8 @@ async fn execute_workflow_inner(
     registry: &NodeRegistry,
     services: &ServiceProvider,
     retry_policy: &RetryPolicy,
+    runtime_options: ExecutionRuntimeOptions,
     cancellation_flag: Option<Arc<AtomicBool>>,
-    runtime_event_sender: Option<UnboundedSender<RuntimeNodeEvent>>,
 ) -> WorkflowExecutionResult {
     let workflow_start_time = std::time::Instant::now();
     let started_at = chrono::Utc::now().to_rfc3339();
@@ -473,13 +479,29 @@ async fn execute_workflow_inner(
         }
     }
 
-    // Create execution context from workflow config
-    let context = ExecutionContext::new(
-        workflow
-            .config
-            .clone()
-            .unwrap_or(Value::Object(Default::default())),
-    );
+    // Create execution context from workflow config merged with per-run context.
+    let mut context_config = workflow
+        .config
+        .clone()
+        .unwrap_or(Value::Object(Default::default()));
+    if !context_config.is_object() {
+        context_config = Value::Object(Default::default());
+    }
+
+    let ExecutionRuntimeOptions {
+        run_context,
+        runtime_event_sender,
+    } = runtime_options;
+
+    if let Some(Value::Object(run_map)) = run_context {
+        if let Value::Object(config_map) = &mut context_config {
+            for (key, value) in run_map {
+                config_map.insert(key, value);
+            }
+        }
+    }
+
+    let context = ExecutionContext::new(context_config);
 
     // Track inactive edges caused by branching decisions, skips, and recoverable failures.
     let mut inactive_edges: HashSet<String> = HashSet::new();
