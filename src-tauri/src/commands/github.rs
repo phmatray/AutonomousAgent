@@ -53,6 +53,13 @@ pub struct Issue {
 
 #[tauri::command]
 pub async fn authenticate_github(token: String, state: State<'_, AppState>) -> Result<AuthResult> {
+    let token = token.trim().to_string();
+    if token.is_empty() {
+        return Err(crate::errors::AppError::Validation(
+            "GitHub token cannot be empty".to_string(),
+        ));
+    }
+
     match state.github.authenticate(&token).await {
         Ok(user) => {
             // Persist as reusable credential profile and keep legacy token for compatibility.
@@ -73,14 +80,20 @@ pub async fn authenticate_github(token: String, state: State<'_, AppState>) -> R
 pub async fn list_github_credentials(
     state: State<'_, AppState>,
 ) -> Result<Vec<GitHubCredentialResponse>> {
-    let mut credentials = state.storage.list_github_credentials()?;
+    let mut credentials = match state.storage.list_github_credentials() {
+        Ok(credentials) => credentials,
+        Err(err) => {
+            eprintln!("Could not load stored credentials: {}", err);
+            Vec::new()
+        }
+    };
 
     // Backfill credentials for users authenticated before multi-credential support.
     if credentials.is_empty() && ensure_github_authenticated(&state).await.is_ok() {
         if let Ok(user) = state.github.get_authenticated_user().await {
             if let Ok(token) = state.storage.get_github_token() {
                 let _ = state.storage.save_github_credential(&user.login, &token);
-                credentials = state.storage.list_github_credentials()?;
+                credentials = state.storage.list_github_credentials().unwrap_or_default();
             }
         }
     }
