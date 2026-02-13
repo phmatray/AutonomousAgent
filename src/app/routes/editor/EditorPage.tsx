@@ -512,9 +512,9 @@ export function EditorPage() {
             disabled={!canSave}
             animate={saveGlow ? {
               boxShadow: [
-                '0 0 0px rgba(99, 102, 241, 0)',
-                '0 0 20px rgba(99, 102, 241, 0.6)',
-                '0 0 0px rgba(99, 102, 241, 0)',
+                '0 0 0px rgba(203, 166, 247, 0)',
+                '0 0 20px rgba(203, 166, 247, 0.65)',
+                '0 0 0px rgba(203, 166, 247, 0)',
               ],
             } : {}}
             transition={saveGlow ? { duration: 1.2, ease: 'easeInOut' } : {}}

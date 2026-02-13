@@ -441,7 +441,7 @@ describe('Editor Store', () => {
       });
 
       const edge = useEditorStore.getState().edges[0];
-      expect(edge.style?.stroke).toBe('#059669');
+      expect(edge.style?.stroke).toBe('#a6e3a1');
     });
 
     it('uses red stroke for condition false branch', () => {
@@ -459,7 +459,7 @@ describe('Editor Store', () => {
       });
 
       const edge = useEditorStore.getState().edges[0];
-      expect(edge.style?.stroke).toBe('#dc2626');
+      expect(edge.style?.stroke).toBe('#f38ba8');
     });
 
     it('uses default indigo stroke for non-condition nodes', () => {
@@ -477,7 +477,7 @@ describe('Editor Store', () => {
       });
 
       const edge = useEditorStore.getState().edges[0];
-      expect(edge.style?.stroke).toBe('#6366f1');
+      expect(edge.style?.stroke).toBe('#cba6f7');
     });
 
     it('sets animated to true on created edges', () => {

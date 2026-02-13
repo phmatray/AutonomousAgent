@@ -129,9 +129,9 @@ function WorkflowNodeComponent({ data, selected, dragging }: NodeProps<WorkflowN
         opacity: 1,
         scale: dragging ? 1.05 : 1,
         boxShadow: dragging
-          ? '0 8px 30px rgba(99, 102, 241, 0.25)'
+          ? '0 8px 30px rgba(203, 166, 247, 0.3)'
           : selected
-            ? '0 4px 20px rgba(99, 102, 241, 0.3)'
+            ? '0 4px 20px rgba(203, 166, 247, 0.35)'
             : '0 4px 12px rgba(0, 0, 0, 0.4)',
       }}
       transition={{

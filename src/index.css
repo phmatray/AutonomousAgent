@@ -23,8 +23,8 @@
   }
 
   body {
-    background-color: #0a0a0f;
-    color: #f1f5f9;
+    background-color: #11111b;
+    color: #cdd6f4;
     font-family: 'Geist Sans', 'Inter', 'system-ui', 'sans-serif';
     line-height: 1.5;
     font-weight: 400;
@@ -37,8 +37,8 @@
 
   /* Selection highlight */
   ::selection {
-    background-color: rgba(99, 102, 241, 0.3);
-    color: #ffffff;
+    background-color: rgba(203, 166, 247, 0.35);
+    color: #f5e0dc;
   }
 
   /* Scrollbar styling for Mission Control theme */
@@ -48,36 +48,36 @@
   }
 
   ::-webkit-scrollbar-track {
-    background-color: #12121a;
+    background-color: #181825;
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: #2a2a3a;
+    background-color: #313244;
     border-radius: 9999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: #3a3a4e;
+    background-color: #45475a;
   }
 
   /* Focus ring utility */
   *:focus-visible {
     outline: none;
     box-shadow:
-      0 0 0 2px #6366f1,
-      0 0 0 4px #0a0a0f;
+      0 0 0 2px #cba6f7,
+      0 0 0 4px #11111b;
   }
 }
 
 /* Node execution state animations */
 @keyframes border-pulse-running {
-  0%, 100% { border-color: #22d3ee; box-shadow: 0 0 8px rgba(34, 211, 238, 0.3); }
-  50% { border-color: #06b6d4; box-shadow: 0 0 16px rgba(34, 211, 238, 0.5); }
+  0%, 100% { border-color: #89dceb; box-shadow: 0 0 8px rgba(137, 220, 235, 0.35); }
+  50% { border-color: #74c7ec; box-shadow: 0 0 16px rgba(137, 220, 235, 0.5); }
 }
 
 @keyframes border-pulse-scheduled {
-  0%, 100% { border-color: #818cf8; box-shadow: 0 0 8px rgba(129, 140, 248, 0.2); }
-  50% { border-color: #6366f1; box-shadow: 0 0 12px rgba(129, 140, 248, 0.35); }
+  0%, 100% { border-color: #b4befe; box-shadow: 0 0 8px rgba(180, 190, 254, 0.2); }
+  50% { border-color: #cba6f7; box-shadow: 0 0 12px rgba(203, 166, 247, 0.35); }
 }
 
 .node-state-running {
@@ -94,49 +94,49 @@
 }
 
 .react-flow__background {
-  background-color: #0a0a0f;
+  background-color: #11111b;
 }
 
 .react-flow__minimap {
-  background-color: #12121a;
-  border: 1px solid #2a2a3a;
+  background-color: #181825;
+  border: 1px solid #313244;
   border-radius: 0.5rem;
 }
 
 .react-flow__controls {
-  background-color: #22222e;
-  border: 1px solid #2a2a3a;
+  background-color: #1e1e2e;
+  border: 1px solid #313244;
   border-radius: 0.5rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .react-flow__controls-button {
-  background-color: #22222e;
-  border-color: #2a2a3a;
-  color: #94a3b8;
+  background-color: #1e1e2e;
+  border-color: #313244;
+  color: #bac2de;
 }
 
 .react-flow__controls-button:hover {
-  background-color: #1a1a25;
-  color: #f1f5f9;
+  background-color: #313244;
+  color: #cdd6f4;
 }
 
 .react-flow__edge-path {
-  stroke: #2a2a3a;
+  stroke: #313244;
   stroke-width: 2;
 }
 
 .react-flow__edge.selected .react-flow__edge-path,
 .react-flow__edge:hover .react-flow__edge-path {
-  stroke: #6366f1;
+  stroke: #cba6f7;
 }
 
 .react-flow__handle {
-  background-color: #2a2a3a;
-  border: 2px solid #22222e;
+  background-color: #313244;
+  border: 2px solid #1e1e2e;
 }
 
 .react-flow__handle:hover {
-  background-color: #6366f1;
-  border-color: #6366f1;
+  background-color: #cba6f7;
+  border-color: #cba6f7;
 }

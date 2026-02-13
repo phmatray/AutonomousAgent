@@ -116,9 +116,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     // Color edges based on condition node sourceHandle
     const sourceNode = nodes.find((n) => n.id === connection.source);
-    let strokeColor = '#6366f1';
+    let strokeColor = '#cba6f7';
     if (sourceNode?.data.nodeType === 'condition') {
-      strokeColor = connection.sourceHandle === 'true' ? '#059669' : '#dc2626';
+      strokeColor = connection.sourceHandle === 'true' ? '#a6e3a1' : '#f38ba8';
     }
 
     set({

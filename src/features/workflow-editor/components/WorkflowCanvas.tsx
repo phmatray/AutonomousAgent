@@ -106,7 +106,7 @@ export function WorkflowCanvas({ dragState }: WorkflowCanvasProps) {
   const defaultEdgeOptions = useMemo(
     () => ({
       type: 'animated',
-      style: { stroke: '#6366f1', strokeWidth: 2 },
+      style: { stroke: '#cba6f7', strokeWidth: 2 },
     }),
     [],
   );
@@ -127,14 +127,14 @@ export function WorkflowCanvas({ dragState }: WorkflowCanvasProps) {
         className="absolute inset-0 opacity-40"
         style={{
           backgroundImage:
-            'radial-gradient(ellipse at 20% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(167, 139, 250, 0.06) 0%, transparent 50%)',
+            'radial-gradient(ellipse at 20% 50%, rgba(203, 166, 247, 0.1) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(137, 180, 250, 0.08) 0%, transparent 50%)',
         }}
       />
       <div
         className="absolute inset-0 opacity-[0.15]"
         style={{
           backgroundImage:
-            'radial-gradient(circle, #2a2a3a 1px, transparent 1px)',
+            'radial-gradient(circle, #45475a 1px, transparent 1px)',
           backgroundSize: '24px 24px',
         }}
       />
@@ -158,13 +158,13 @@ export function WorkflowCanvas({ dragState }: WorkflowCanvasProps) {
           className="w-full h-full !bg-transparent"
           deleteKeyCode={null}
         >
-          <Background color="#2a2a3a" gap={24} size={1} />
+          <Background color="#45475a" gap={24} size={1} />
           {!isMobile && (
             <>
               <Controls aria-label="Canvas controls" />
               <MiniMap
-                nodeColor="#6366f1"
-                maskColor="rgba(10, 10, 15, 0.7)"
+                nodeColor="#cba6f7"
+                maskColor="rgba(17, 17, 27, 0.72)"
                 aria-label="Minimap overview"
               />
             </>
