@@ -101,7 +101,7 @@ fn main() {
             commands::workflow::execute_workflow,
             commands::workflow::list_executions,
             commands::workflow::get_execution_logs,
-            commands::workflow::export_debug_bundle,
+            commands::workflow::copy_debug_bundle,
             // GitHub commands
             commands::github::authenticate_github,
             commands::github::list_repositories,

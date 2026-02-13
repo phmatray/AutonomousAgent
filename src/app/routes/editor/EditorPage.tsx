@@ -12,6 +12,7 @@ import { getAuthStatus } from '@/lib/api/github';
 import { useRouter } from '@/lib/router';
 import { editorFlowMachine } from './editor-flow-machine';
 import { editorDomainMachine } from './editor-domain-machine';
+import { parseImportedWorkflow, serializeWorkflowForExport } from './workflow-io';
 import { WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
 import type { NodeType, Workflow } from '@/types/workflow';
 
@@ -21,26 +22,6 @@ interface DragState {
   startY: number;
   currentX: number;
   currentY: number;
-}
-
-interface ImportedWorkflowFile {
-  name?: string;
-  nodes?: Array<{
-    id?: string;
-    type?: string;
-    node_type?: string;
-    config?: Record<string, unknown>;
-    position?: { x?: number; y?: number };
-  }>;
-  edges?: Array<{
-    id?: string;
-    source?: string;
-    target?: string;
-    sourceHandle?: string;
-    targetHandle?: string;
-    source_handle?: string;
-    target_handle?: string;
-  }>;
 }
 
 export function EditorPage() {
@@ -308,7 +289,7 @@ export function EditorPage() {
 
   const handleExport = useCallback(() => {
     const payload = buildWorkflowPayload();
-    const json = JSON.stringify(payload, null, 2);
+    const json = serializeWorkflowForExport(payload);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -331,40 +312,31 @@ export function EditorPage() {
 
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text) as ImportedWorkflowFile;
-      if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
-        throw new Error('Invalid workflow JSON: missing nodes/edges arrays');
-      }
-
-      const importedName = (parsed.name ?? 'Imported Workflow').trim() || 'Imported Workflow';
-
-      const editorNodes = parsed.nodes.map((node, index) => {
-        const nodeType = (node.type ?? node.node_type ?? 'trigger') as NodeType;
+      const normalized = parseImportedWorkflow(text);
+      const editorNodes = normalized.nodes.map((node) => {
         return {
-          id: node.id ?? `node-imported-${Date.now()}-${index}`,
+          id: node.id,
           type: 'workflowNode' as const,
-          position: node.position ? { x: node.position.x ?? 0, y: node.position.y ?? 0 } : { x: 0, y: 0 },
+          position: node.position ? { x: node.position.x, y: node.position.y } : { x: 0, y: 0 },
           data: {
-            label: nodeType,
-            nodeType,
+            label: node.type,
+            nodeType: node.type,
             config: node.config ?? {},
           },
         };
       });
 
-      const editorEdges = parsed.edges
-        .filter((edge) => edge.source && edge.target)
-        .map((edge, index) => ({
-          id: edge.id ?? `edge-imported-${Date.now()}-${index}`,
-          source: edge.source as string,
-          target: edge.target as string,
-          sourceHandle: edge.sourceHandle ?? edge.source_handle ?? undefined,
-          targetHandle: edge.targetHandle ?? edge.target_handle ?? undefined,
-        }));
+      const editorEdges = normalized.edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle ?? undefined,
+        targetHandle: edge.targetHandle ?? undefined,
+      }));
 
       suppressGraphDirtyRef.current = true;
       setGraph(editorNodes, editorEdges);
-      sendDomainEvent({ type: 'WORKFLOW_IMPORTED', name: importedName });
+      sendDomainEvent({ type: 'WORKFLOW_IMPORTED', name: normalized.name });
       navigate('editor');
       sendFlowEvent({ type: 'CLEAR_ERROR' });
     } catch (error) {

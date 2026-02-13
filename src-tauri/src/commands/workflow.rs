@@ -4,7 +4,7 @@ use crate::services::workflow_engine::executor::WorkflowExecutionResult;
 use crate::services::AppState;
 use chrono;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::State;
 use uuid;
 
 #[tauri::command]
@@ -102,16 +102,15 @@ pub struct DebugBundle {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ExportDebugBundleResponse {
-    pub path: String,
+pub struct CopyDebugBundleResponse {
+    pub bundle_json: String,
 }
 
 #[tauri::command]
-pub async fn export_debug_bundle(
+pub async fn copy_debug_bundle(
     execution_id: String,
     state: State<'_, AppState>,
-    app: AppHandle,
-) -> Result<ExportDebugBundleResponse> {
+) -> Result<CopyDebugBundleResponse> {
     let execution = state
         .engine
         .list_executions(None)
@@ -134,18 +133,7 @@ pub async fn export_debug_bundle(
         logs,
     };
 
-    let app_dir = app.path().app_data_dir()?;
-    let bundles_dir = app_dir.join("debug-bundles");
-    std::fs::create_dir_all(&bundles_dir)?;
-    let filename = format!(
-        "debug-bundle-{}-{}.json",
-        bundle.execution.id,
-        chrono::Utc::now().format("%Y%m%dT%H%M%SZ")
-    );
-    let path = bundles_dir.join(filename);
-    std::fs::write(&path, serde_json::to_string_pretty(&bundle)?)?;
-
-    Ok(ExportDebugBundleResponse {
-        path: path.display().to_string(),
+    Ok(CopyDebugBundleResponse {
+        bundle_json: serde_json::to_string_pretty(&bundle)?,
     })
 }

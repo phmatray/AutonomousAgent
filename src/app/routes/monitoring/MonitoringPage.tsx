@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMachine } from '@xstate/react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { WorkflowExecution, ExecutionLog, ExecutionStatus } from '@/types/workflow';
-import { exportDebugBundle } from '@/lib/api/workflow';
+import { copyDebugBundle } from '@/lib/api/workflow';
 import { useRouter } from '@/lib/router';
 import { monitoringMachine } from './monitoring-machine';
 
@@ -232,25 +232,26 @@ export function MonitoringPage() {
   const contextEntries = getExecutionContextEntries(selectedExecution?.context);
 
   const handleCancel = () => send({ type: 'CANCEL_SELECTED' });
-  const [exportState, setExportState] = useState<{
-    isExporting: boolean;
-    path: string | null;
+  const [copyState, setCopyState] = useState<{
+    isCopying: boolean;
+    copied: boolean;
     error: string | null;
   }>({
-    isExporting: false,
-    path: null,
+    isCopying: false,
+    copied: false,
     error: null,
   });
 
-  const handleExportDebugBundle = async () => {
-    if (!selectedExecutionId || exportState.isExporting) return;
-    setExportState({ isExporting: true, path: null, error: null });
+  const handleCopyDebugBundle = async () => {
+    if (!selectedExecutionId || copyState.isCopying) return;
+    setCopyState({ isCopying: true, copied: false, error: null });
     try {
-      const result = await exportDebugBundle(selectedExecutionId);
-      setExportState({ isExporting: false, path: result.path, error: null });
+      const result = await copyDebugBundle(selectedExecutionId);
+      await navigator.clipboard.writeText(result.bundleJson);
+      setCopyState({ isCopying: false, copied: true, error: null });
     } catch (error) {
       const message = formatExportError(error);
-      setExportState({ isExporting: false, path: null, error: message });
+      setCopyState({ isCopying: false, copied: false, error: message });
     }
   };
 
@@ -321,12 +322,12 @@ export function MonitoringPage() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleExportDebugBundle}
-                  disabled={exportState.isExporting}
+                  onClick={handleCopyDebugBundle}
+                  disabled={copyState.isCopying}
                   className="px-3 py-1.5 text-sm bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                  aria-label="Export debug bundle"
+                  aria-label="Copy debug bundle"
                 >
-                  {exportState.isExporting ? 'Exporting...' : 'Export Debug Bundle'}
+                  {copyState.isCopying ? 'Copying...' : 'Copy Debug Bundle'}
                 </button>
                 {isStreaming && (
                   <button
@@ -340,16 +341,16 @@ export function MonitoringPage() {
                 )}
               </div>
             </header>
-            {(exportState.path || exportState.error) && (
+            {(copyState.copied || copyState.error) && (
               <div className="px-4 py-2 border-b border-gray-800 bg-gray-900/80 text-xs">
-                {exportState.path && (
+                {copyState.copied && (
                   <p className="text-green-400">
-                    Debug bundle exported to: <span className="font-mono">{exportState.path}</span>
+                    Debug bundle copied to clipboard.
                   </p>
                 )}
-                {exportState.error && (
+                {copyState.error && (
                   <p className="text-red-400" role="alert">
-                    {exportState.error}
+                    {copyState.error}
                   </p>
                 )}
               </div>
