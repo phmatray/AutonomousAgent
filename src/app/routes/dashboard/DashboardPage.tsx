@@ -6,6 +6,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { CenteredPage, PageHeader } from '@/app/components/PageLayout';
 import { useWorkflowCatalogActorRef, WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
 import { executeWorkflow, updateWorkflow } from '@/lib/api/workflow';
+import { Badge, Button, Input, SectionCard } from '@/components/ui/primitives';
 
 type SortOption = 'updated-desc' | 'name-asc' | 'name-desc' | 'nodes-desc';
 type WorkflowStatus = 'draft' | 'published';
@@ -21,16 +22,11 @@ interface TriggerDetails {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    published: 'bg-green-900 text-green-300',
-    draft: 'bg-gray-700 text-gray-300',
-  };
+  const tone = status === 'published' ? 'success' : 'default';
   return (
-    <span
-      className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${colors[status] ?? colors.draft}`}
-    >
+    <Badge tone={tone}>
       {status}
-    </span>
+    </Badge>
   );
 }
 
@@ -302,21 +298,11 @@ function KpiChips({ workflows }: { workflows: Workflow[] }) {
 
   return (
     <div className="mb-4 flex flex-wrap gap-2" aria-label="Workflow summary">
-      <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-800 border border-gray-700 text-gray-200">
-        Total {stats.total}
-      </span>
-      <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-green-900/40 border border-green-800 text-green-300">
-        Published {stats.published}
-      </span>
-      <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-800 border border-gray-700 text-gray-300">
-        Draft {stats.draft}
-      </span>
-      <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-sky-900/40 border border-sky-800 text-sky-200">
-        Scheduled {stats.scheduled}
-      </span>
-      <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-800 border border-gray-700 text-gray-300">
-        On-demand {stats.onDemand}
-      </span>
+      <Badge>Total {stats.total}</Badge>
+      <Badge tone="success">Published {stats.published}</Badge>
+      <Badge>Draft {stats.draft}</Badge>
+      <Badge tone="info">Scheduled {stats.scheduled}</Badge>
+      <Badge>On-demand {stats.onDemand}</Badge>
     </div>
   );
 }
@@ -336,12 +322,12 @@ function SearchAndSortControls({
     <div className="mb-4 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
       <label className="flex-1">
         <span className="sr-only">Search workflows</span>
-        <input
+        <Input
           type="search"
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder="Search workflows..."
-          className="h-10 w-full px-3 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          className="bg-gray-800 text-gray-200 placeholder:text-gray-500"
         />
       </label>
       <label className="sm:w-56">
@@ -372,7 +358,7 @@ function EmptyState({
   onNavigateToBacklog: () => void;
 }) {
   return (
-    <section className="rounded-xl border border-gray-700 bg-gray-900/70 p-6">
+    <SectionCard className="rounded-xl bg-gray-900/70">
       <div className="flex items-start gap-4">
         <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-gray-800">
           <span className="text-xl text-gray-500" aria-hidden="true">+</span>
@@ -397,31 +383,29 @@ function EmptyState({
             </li>
           </ol>
           <div className="mt-5 flex flex-wrap gap-2">
-            <button
-              type="button"
+            <Button
               onClick={onNavigateToCredentials}
-              className="px-3 py-2 bg-gray-800 text-gray-100 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
+              variant="secondary"
+              className="bg-gray-800 hover:bg-gray-700"
             >
               Connect Credentials
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
               onClick={onNavigateToBacklog}
-              className="px-3 py-2 bg-gray-800 text-gray-100 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
+              variant="secondary"
+              className="bg-gray-800 hover:bg-gray-700"
             >
               Sync Backlog
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
               onClick={() => onNavigateToEditor()}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               Create Workflow
-            </button>
+            </Button>
           </div>
         </div>
       </div>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -540,13 +524,11 @@ export function DashboardPage() {
         title="Workflow Scheduler"
         description="Manage scheduled and on-demand workflow automations"
         actions={(
-          <button
-            type="button"
+          <Button
             onClick={() => navigateToEditor()}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             New Workflow
-          </button>
+          </Button>
         )}
         metadata={!isLoading && !loadError && workflows.length > 0 ? <KpiChips workflows={workflows} /> : null}
       />
@@ -565,27 +547,26 @@ export function DashboardPage() {
       )}
 
       {loadError && !isLoading && (
-        <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 text-center">
+        <SectionCard className="text-center">
           <p className="text-gray-300 mb-2">Could not load workflows</p>
           <p className="text-xs text-gray-400">
             Backend services may not be running. The workflow editor is still available.
           </p>
-          <button
-            type="button"
+          <Button
             onClick={() => actorRef.send({ type: 'RETRY' })}
             disabled={isLoading}
-            className="mt-4 mr-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            variant="secondary"
+            className="mt-4 mr-2"
           >
             {isLoading ? 'Retrying...' : 'Retry'}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             onClick={() => navigateToEditor()}
-            className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="mt-4"
           >
             Open Editor
-          </button>
-        </div>
+          </Button>
+        </SectionCard>
       )}
 
       {!isLoading && !loadError && workflows.length === 0 && (
@@ -608,13 +589,14 @@ export function DashboardPage() {
           {visibleWorkflows.length === 0 ? (
             <div className="bg-gray-800 border border-gray-700 rounded-lg p-8 text-center">
               <p className="text-gray-300">No workflows match your search.</p>
-              <button
-                type="button"
+              <Button
                 onClick={() => setSearchQuery('')}
-                className="mt-3 px-3 py-1.5 bg-gray-700 text-white text-sm rounded hover:bg-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
+                variant="secondary"
+                size="sm"
+                className="mt-3"
               >
                 Clear Search
-              </button>
+              </Button>
             </div>
           ) : (
             <div

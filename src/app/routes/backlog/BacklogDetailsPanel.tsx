@@ -1,4 +1,5 @@
 import type { BacklogItem } from '@/types/workflow';
+import { Button } from '@/components/ui/primitives';
 
 interface BacklogDetailsPanelProps {
   item: BacklogItem;
@@ -43,22 +44,20 @@ export function BacklogDetailsPanel({
 
       <div className="mb-4 space-y-2">
         {item.linked_workflow_id ? (
-          <button
-            type="button"
+          <Button
             onClick={() => onOpenLinkedWorkflow(item.linked_workflow_id!)}
-            className="w-full px-3 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full"
           >
             Open Linked Workflow
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
+          <Button
             onClick={() => onCreateLinkedWorkflow(item.id)}
             disabled={isCreatingLinkedWorkflow}
-            className="w-full px-3 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full"
           >
             {isCreatingLinkedWorkflow ? 'Creating Workflow...' : 'Create Linked Workflow'}
-          </button>
+          </Button>
         )}
         {linkedWorkflowFeedback ? (
           <p className="text-xs text-green-300" role="status">{linkedWorkflowFeedback}</p>
