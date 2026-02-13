@@ -1,0 +1,18 @@
+# Build outputs
+node_modules/
+dist/
+dist-ssr/
+src-tauri/target/
+target/
+**/target/**
+
+# Test and coverage artifacts
+coverage/
+**/coverage/**
+playwright-report/
+test-results/
+src-tauri/tarpaulin-report.*
+
+# Logs
+logs/
+*.log
