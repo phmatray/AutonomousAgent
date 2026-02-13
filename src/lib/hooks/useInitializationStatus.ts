@@ -23,8 +23,20 @@ export function useInitializationStatus() {
     query.data?.database === true &&
     query.data?.github_auth_attempted === true;
 
+  const lastCheckedAt = query.dataUpdatedAt > 0
+    ? new Date(query.dataUpdatedAt).toISOString()
+    : null;
+
+  const errorMessage = query.error instanceof Error
+    ? query.error.message
+    : query.error
+      ? String(query.error)
+      : null;
+
   return {
     ...query,
     isFullyInitialized,
+    lastCheckedAt,
+    errorMessage,
   };
 }
