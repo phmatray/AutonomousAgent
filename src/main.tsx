@@ -3,8 +3,17 @@ import ReactDOM from 'react-dom/client';
 import App from './app/App';
 import './index.css';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+async function bootstrap() {
+  if (import.meta.env.VITE_E2E_WEBDRIVER === '1') {
+    const { installWebDriverTauriMock } = await import('./test/e2e/webdriver-tauri-mock');
+    installWebDriverTauriMock();
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+}
+
+void bootstrap();

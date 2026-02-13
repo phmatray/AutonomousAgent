@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { mockInvoke, mockListen } from '@/test/mocks/tauri';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { emit } from '@tauri-apps/api/event';
+import { mockInvoke } from '@/test/mocks/tauri';
 import {
   executePlan,
   cancelExecution,
@@ -19,7 +20,6 @@ const mockExecResult: ExecutionResult = {
 describe('execution API (claude)', () => {
   beforeEach(() => {
     mockInvoke.mockReset();
-    mockListen.mockReset();
   });
 
   describe('executePlan', () => {
@@ -102,34 +102,15 @@ describe('execution API (claude)', () => {
   });
 
   describe('onClaudeStdout', () => {
-    it('registers listener for claude:output:stdout events', async () => {
-      const mockUnlisten = vi.fn();
-      mockListen.mockResolvedValueOnce(mockUnlisten);
-      const callback = vi.fn();
-
-      const unlisten = await onClaudeStdout(callback);
-
-      expect(mockListen).toHaveBeenCalledWith('claude:output:stdout', expect.any(Function));
-      expect(unlisten).toBe(mockUnlisten);
-    });
-
-    it('passes event payload to callback', async () => {
-      const mockUnlisten = vi.fn();
-      mockListen.mockImplementationOnce(
-        (_event: string, handler: (event: { payload: ClaudeOutput }) => void) => {
-          handler({
-            payload: {
-              execution_id: 'exec-1',
-              content: 'Processing...',
-              stream: 'stdout',
-            },
-          });
-          return Promise.resolve(mockUnlisten);
-        },
-      );
+    it('receives emitted stdout events', async () => {
       const callback = vi.fn();
 
       await onClaudeStdout(callback);
+      await emit('claude:output:stdout', {
+        execution_id: 'exec-1',
+        content: 'Processing...',
+        stream: 'stdout',
+      } satisfies ClaudeOutput);
 
       expect(callback).toHaveBeenCalledWith({
         execution_id: 'exec-1',
@@ -137,37 +118,41 @@ describe('execution API (claude)', () => {
         stream: 'stdout',
       });
     });
+
+    it('stops receiving events after unlisten', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const callback = vi.fn();
+      const unlisten = await onClaudeStdout(callback);
+
+      await emit('claude:output:stdout', {
+        execution_id: 'exec-1',
+        content: 'line 1',
+        stream: 'stdout',
+      } satisfies ClaudeOutput);
+      expect(callback).toHaveBeenCalledTimes(1);
+
+      unlisten();
+      await emit('claude:output:stdout', {
+        execution_id: 'exec-1',
+        content: 'line 2',
+        stream: 'stdout',
+      } satisfies ClaudeOutput);
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
   });
 
   describe('onClaudeStderr', () => {
-    it('registers listener for claude:output:stderr events', async () => {
-      const mockUnlisten = vi.fn();
-      mockListen.mockResolvedValueOnce(mockUnlisten);
-      const callback = vi.fn();
-
-      const unlisten = await onClaudeStderr(callback);
-
-      expect(mockListen).toHaveBeenCalledWith('claude:output:stderr', expect.any(Function));
-      expect(unlisten).toBe(mockUnlisten);
-    });
-
-    it('passes event payload to callback', async () => {
-      const mockUnlisten = vi.fn();
-      mockListen.mockImplementationOnce(
-        (_event: string, handler: (event: { payload: ClaudeOutput }) => void) => {
-          handler({
-            payload: {
-              execution_id: 'exec-1',
-              content: 'Warning: deprecated API',
-              stream: 'stderr',
-            },
-          });
-          return Promise.resolve(mockUnlisten);
-        },
-      );
+    it('receives emitted stderr events', async () => {
       const callback = vi.fn();
 
       await onClaudeStderr(callback);
+      await emit('claude:output:stderr', {
+        execution_id: 'exec-1',
+        content: 'Warning: deprecated API',
+        stream: 'stderr',
+      } satisfies ClaudeOutput);
 
       expect(callback).toHaveBeenCalledWith({
         execution_id: 'exec-1',
@@ -178,40 +163,15 @@ describe('execution API (claude)', () => {
   });
 
   describe('onClaudeComplete', () => {
-    it('registers listener for claude:execution:complete events', async () => {
-      const mockUnlisten = vi.fn();
-      mockListen.mockResolvedValueOnce(mockUnlisten);
-      const callback = vi.fn();
-
-      const unlisten = await onClaudeComplete(callback);
-
-      expect(mockListen).toHaveBeenCalledWith(
-        'claude:execution:complete',
-        expect.any(Function),
-      );
-      expect(unlisten).toBe(mockUnlisten);
-    });
-
-    it('passes event payload to callback', async () => {
-      const mockUnlisten = vi.fn();
-      mockListen.mockImplementationOnce(
-        (
-          _event: string,
-          handler: (event: { payload: ClaudeExecutionComplete }) => void,
-        ) => {
-          handler({
-            payload: {
-              execution_id: 'exec-1',
-              exit_code: 0,
-              success: true,
-            },
-          });
-          return Promise.resolve(mockUnlisten);
-        },
-      );
+    it('receives completion payload', async () => {
       const callback = vi.fn();
 
       await onClaudeComplete(callback);
+      await emit('claude:execution:complete', {
+        execution_id: 'exec-1',
+        exit_code: 0,
+        success: true,
+      } satisfies ClaudeExecutionComplete);
 
       expect(callback).toHaveBeenCalledWith({
         execution_id: 'exec-1',
@@ -221,25 +181,14 @@ describe('execution API (claude)', () => {
     });
 
     it('handles failed execution complete event', async () => {
-      const mockUnlisten = vi.fn();
-      mockListen.mockImplementationOnce(
-        (
-          _event: string,
-          handler: (event: { payload: ClaudeExecutionComplete }) => void,
-        ) => {
-          handler({
-            payload: {
-              execution_id: 'exec-1',
-              exit_code: 1,
-              success: false,
-            },
-          });
-          return Promise.resolve(mockUnlisten);
-        },
-      );
       const callback = vi.fn();
 
       await onClaudeComplete(callback);
+      await emit('claude:execution:complete', {
+        execution_id: 'exec-1',
+        exit_code: 1,
+        success: false,
+      } satisfies ClaudeExecutionComplete);
 
       expect(callback).toHaveBeenCalledWith({
         execution_id: 'exec-1',

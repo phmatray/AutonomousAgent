@@ -1,12 +1,22 @@
 import { vi } from 'vitest';
+import { mockIPC } from '@tauri-apps/api/mocks';
 
 export const mockInvoke = vi.fn();
-export const mockListen = vi.fn();
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: mockInvoke,
-}));
+export function initializeTauriMocking() {
+  mockIPC((cmd, payload) => {
+    const normalizedPayload =
+      payload != null &&
+      typeof payload === 'object' &&
+      !Array.isArray(payload) &&
+      Object.keys(payload).length === 0
+        ? undefined
+        : payload;
 
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: mockListen,
-}));
+    if (normalizedPayload === undefined) {
+      return mockInvoke(cmd);
+    }
+
+    return mockInvoke(cmd, normalizedPayload);
+  }, { shouldMockEvents: true });
+}

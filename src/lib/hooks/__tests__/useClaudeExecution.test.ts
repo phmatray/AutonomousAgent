@@ -1,32 +1,15 @@
 import { renderHook, act } from '@testing-library/react';
-import { vi, describe, it, expect, beforeEach, type Mock } from 'vitest';
+import { emit } from '@tauri-apps/api/event';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { useClaudeExecution } from '../useClaudeExecution';
-import { mockInvoke, mockListen } from '@/test/mocks/tauri';
-
-// Capture event listener callbacks registered via listen()
-let eventListeners: Record<string, (event: { payload: unknown }) => void> = {};
-let unlistenFns: Record<string, Mock> = {};
+import { mockInvoke } from '@/test/mocks/tauri';
 
 beforeEach(() => {
   mockInvoke.mockReset();
-  mockListen.mockReset();
-  eventListeners = {};
-  unlistenFns = {};
-
-  // When listen() is called, capture the callback and return an unlisten function
-  mockListen.mockImplementation(async (eventName: string, callback: (event: { payload: unknown }) => void) => {
-    eventListeners[eventName] = callback;
-    const unlisten = vi.fn();
-    unlistenFns[eventName] = unlisten;
-    return unlisten;
-  });
 });
 
-function emitEvent(eventName: string, payload: unknown) {
-  const listener = eventListeners[eventName];
-  if (listener) {
-    listener({ payload });
-  }
+async function emitEvent(eventName: string, payload: unknown) {
+  await emit(eventName, payload);
 }
 
 describe('useClaudeExecution', () => {
@@ -102,7 +85,7 @@ describe('useClaudeExecution', () => {
       expect(returnedId).toBe('exec-42');
     });
 
-    it('should register event listeners before executing', async () => {
+    it('should handle mocked stream events after execute', async () => {
       mockInvoke.mockResolvedValueOnce({ id: 'exec-5', status: 'running' });
 
       const { result } = renderHook(() => useClaudeExecution());
@@ -111,9 +94,15 @@ describe('useClaudeExecution', () => {
         await result.current.execute('test');
       });
 
-      expect(mockListen).toHaveBeenCalledWith('claude:output:stdout', expect.any(Function));
-      expect(mockListen).toHaveBeenCalledWith('claude:output:stderr', expect.any(Function));
-      expect(mockListen).toHaveBeenCalledWith('claude:execution:complete', expect.any(Function));
+      await act(async () => {
+        await emitEvent('claude:output:stdout', {
+          execution_id: 'exec-5',
+          content: 'line 1',
+          stream: 'stdout',
+        });
+      });
+
+      expect(result.current.output).toBe('line 1\n');
     });
   });
 
@@ -127,8 +116,8 @@ describe('useClaudeExecution', () => {
         await result.current.execute('test');
       });
 
-      act(() => {
-        emitEvent('claude:output:stdout', {
+      await act(async () => {
+        await emitEvent('claude:output:stdout', {
           execution_id: 'exec-6',
           content: 'line 1',
           stream: 'stdout',
@@ -137,8 +126,8 @@ describe('useClaudeExecution', () => {
 
       expect(result.current.output).toBe('line 1\n');
 
-      act(() => {
-        emitEvent('claude:output:stdout', {
+      await act(async () => {
+        await emitEvent('claude:output:stdout', {
           execution_id: 'exec-6',
           content: 'line 2',
           stream: 'stdout',
@@ -157,8 +146,8 @@ describe('useClaudeExecution', () => {
         await result.current.execute('test');
       });
 
-      act(() => {
-        emitEvent('claude:output:stderr', {
+      await act(async () => {
+        await emitEvent('claude:output:stderr', {
           execution_id: 'exec-7',
           content: 'warning message',
           stream: 'stderr',
@@ -177,16 +166,16 @@ describe('useClaudeExecution', () => {
         await result.current.execute('test');
       });
 
-      act(() => {
-        emitEvent('claude:output:stdout', {
+      await act(async () => {
+        await emitEvent('claude:output:stdout', {
           execution_id: 'exec-8',
           content: 'stdout line',
           stream: 'stdout',
         });
       });
 
-      act(() => {
-        emitEvent('claude:output:stderr', {
+      await act(async () => {
+        await emitEvent('claude:output:stderr', {
           execution_id: 'exec-8',
           content: 'stderr line',
           stream: 'stderr',
@@ -209,8 +198,8 @@ describe('useClaudeExecution', () => {
 
       expect(result.current.isRunning).toBe(true);
 
-      act(() => {
-        emitEvent('claude:execution:complete', {
+      await act(async () => {
+        await emitEvent('claude:execution:complete', {
           execution_id: 'exec-9',
           exit_code: 0,
           success: true,
@@ -230,8 +219,8 @@ describe('useClaudeExecution', () => {
         await result.current.execute('test');
       });
 
-      act(() => {
-        emitEvent('claude:execution:complete', {
+      await act(async () => {
+        await emitEvent('claude:execution:complete', {
           execution_id: 'exec-10',
           exit_code: 1,
           success: false,
@@ -242,26 +231,37 @@ describe('useClaudeExecution', () => {
       expect(result.current.error).toBe('Execution failed with exit code 1');
     });
 
-    it('should clean up event listeners on completion', async () => {
+    it('should stop processing output events after completion', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       mockInvoke.mockResolvedValueOnce({ id: 'exec-11', status: 'running' });
+      const onOutput = vi.fn();
 
-      const { result } = renderHook(() => useClaudeExecution());
+      const { result } = renderHook(() => useClaudeExecution({ onOutput }));
 
       await act(async () => {
         await result.current.execute('test');
       });
 
-      act(() => {
-        emitEvent('claude:execution:complete', {
+      await act(async () => {
+        await emitEvent('claude:execution:complete', {
           execution_id: 'exec-11',
           exit_code: 0,
           success: true,
         });
       });
 
-      expect(unlistenFns['claude:output:stdout']).toHaveBeenCalled();
-      expect(unlistenFns['claude:output:stderr']).toHaveBeenCalled();
-      expect(unlistenFns['claude:execution:complete']).toHaveBeenCalled();
+      await act(async () => {
+        await emitEvent('claude:output:stdout', {
+          execution_id: 'exec-11',
+          content: 'should-not-append',
+          stream: 'stdout',
+        });
+      });
+
+      expect(result.current.output).toBe('');
+      expect(onOutput).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalled();
+      warnSpy.mockRestore();
     });
   });
 
@@ -295,17 +295,28 @@ describe('useClaudeExecution', () => {
     });
 
     it('should clean up listeners on executePlan error', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       mockInvoke.mockRejectedValueOnce(new Error('timeout'));
+      const onOutput = vi.fn();
 
-      const { result } = renderHook(() => useClaudeExecution());
+      const { result } = renderHook(() => useClaudeExecution({ onOutput }));
 
       await act(async () => {
         await result.current.execute('test');
       });
 
-      expect(unlistenFns['claude:output:stdout']).toHaveBeenCalled();
-      expect(unlistenFns['claude:output:stderr']).toHaveBeenCalled();
-      expect(unlistenFns['claude:execution:complete']).toHaveBeenCalled();
+      await act(async () => {
+        await emitEvent('claude:output:stdout', {
+          execution_id: 'exec-timeout',
+          content: 'should-not-append',
+          stream: 'stdout',
+        });
+      });
+
+      expect(result.current.output).toBe('');
+      expect(onOutput).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalled();
+      warnSpy.mockRestore();
     });
   });
 
@@ -320,8 +331,8 @@ describe('useClaudeExecution', () => {
         await result.current.execute('test');
       });
 
-      act(() => {
-        emitEvent('claude:output:stdout', {
+      await act(async () => {
+        await emitEvent('claude:output:stdout', {
           execution_id: 'exec-cb1',
           content: 'hello',
           stream: 'stdout',
@@ -345,8 +356,8 @@ describe('useClaudeExecution', () => {
         await result.current.execute('test');
       });
 
-      act(() => {
-        emitEvent('claude:output:stderr', {
+      await act(async () => {
+        await emitEvent('claude:output:stderr', {
           execution_id: 'exec-cb2',
           content: 'warning',
           stream: 'stderr',
@@ -370,8 +381,8 @@ describe('useClaudeExecution', () => {
         await result.current.execute('test');
       });
 
-      act(() => {
-        emitEvent('claude:execution:complete', {
+      await act(async () => {
+        await emitEvent('claude:execution:complete', {
           execution_id: 'exec-cb3',
           exit_code: 0,
           success: true,
@@ -395,8 +406,8 @@ describe('useClaudeExecution', () => {
         await result.current.execute('test');
       });
 
-      act(() => {
-        emitEvent('claude:execution:complete', {
+      await act(async () => {
+        await emitEvent('claude:execution:complete', {
           execution_id: 'exec-cb4',
           exit_code: 1,
           success: false,
@@ -430,9 +441,8 @@ describe('useClaudeExecution', () => {
         await result.current.execute('test');
       });
 
-      // Accumulate some output
-      act(() => {
-        emitEvent('claude:output:stdout', {
+      await act(async () => {
+        await emitEvent('claude:output:stdout', {
           execution_id: 'exec-r1',
           content: 'some output',
           stream: 'stdout',
@@ -454,10 +464,12 @@ describe('useClaudeExecution', () => {
   });
 
   describe('cleanup on unmount', () => {
-    it('should clean up event listeners when the hook unmounts', async () => {
+    it('should stop forwarding output events when the hook unmounts', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       mockInvoke.mockResolvedValueOnce({ id: 'exec-u1', status: 'running' });
+      const onOutput = vi.fn();
 
-      const { result, unmount } = renderHook(() => useClaudeExecution());
+      const { result, unmount } = renderHook(() => useClaudeExecution({ onOutput }));
 
       await act(async () => {
         await result.current.execute('test');
@@ -465,9 +477,15 @@ describe('useClaudeExecution', () => {
 
       unmount();
 
-      expect(unlistenFns['claude:output:stdout']).toHaveBeenCalled();
-      expect(unlistenFns['claude:output:stderr']).toHaveBeenCalled();
-      expect(unlistenFns['claude:execution:complete']).toHaveBeenCalled();
+      await emitEvent('claude:output:stdout', {
+        execution_id: 'exec-u1',
+        content: 'ignored',
+        stream: 'stdout',
+      });
+
+      expect(onOutput).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalled();
+      warnSpy.mockRestore();
     });
   });
 });

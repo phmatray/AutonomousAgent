@@ -153,11 +153,15 @@ Check TypeScript compilation:
 npx tsc --noEmit
 ```
 
-Run frontend end-to-end tests:
+Run frontend end-to-end tests (Tauri WebDriver):
 
 ```bash
 npm run test:e2e
 ```
+
+Prerequisites:
+- Google Chrome installed locally
+- WebDriver dependencies installed via `npm install` (includes `selenium-webdriver`; browser drivers are resolved by Selenium Manager)
 
 ## Configuration
 
