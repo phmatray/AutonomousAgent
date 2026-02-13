@@ -32,6 +32,7 @@ export function EditorPage() {
   const cancelDelete = useEditorStore((s) => s.cancelDelete);
   const setWorkflow = useEditorStore((s) => s.setWorkflow);
   const clearEditor = useEditorStore((s) => s.clearEditor);
+  const addNode = useEditorStore((s) => s.addNode);
   const nodes = useEditorStore((s) => s.nodes);
   const edges = useEditorStore((s) => s.edges);
 
@@ -170,7 +171,7 @@ export function EditorPage() {
       }
     },
   });
-  const canSave = isDirty && isWorkflowNameValid && !saveWorkflowMutation.isPending;
+  const canSave = isWorkflowNameValid && !saveWorkflowMutation.isPending && (!workflowId || isDirty);
 
   const handleSave = useCallback(() => {
     if (!isWorkflowNameValid) {
@@ -197,6 +198,16 @@ export function EditorPage() {
       currentY: startY,
     });
   }, []);
+
+  const handleQuickAddNode = useCallback(
+    (type: NodeType) => {
+      const baseX = window.innerWidth < 768 ? 110 : 260;
+      const baseY = window.innerWidth < 768 ? 120 : 160;
+      const offset = (nodes.length % 6) * 28;
+      addNode(type, { x: baseX + offset, y: baseY + offset });
+    },
+    [addNode, nodes.length],
+  );
 
   // Keyboard shortcuts: Cmd+S for save, Cmd+Enter for execute
   useEffect(() => {
@@ -252,7 +263,7 @@ export function EditorPage() {
   }, []);
 
   return (
-    <div className="flex flex-col h-full relative">
+    <div className="flex flex-col h-full relative min-w-0">
       {/* Drag preview overlay */}
       <AnimatePresence>
         {dragState && (
@@ -358,8 +369,8 @@ export function EditorPage() {
           </motion.button>
         </div>
       </header>
-      <div className="flex flex-1 overflow-hidden">
-        <NodePalette onDragStart={handleDragStart} />
+      <div className="flex flex-1 overflow-hidden flex-col md:flex-row min-w-0">
+        <NodePalette onDragStart={handleDragStart} onQuickAdd={handleQuickAddNode} />
         <WorkflowCanvas dragState={dragState} />
         <AnimatePresence>
           {selectedNodeId && (

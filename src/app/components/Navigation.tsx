@@ -21,13 +21,13 @@ const NAV_ITEMS: NavItem[] = [
 export function Navigation({ currentRoute, onNavigate }: NavigationProps) {
   return (
     <nav
-      className="flex items-center gap-1 bg-gray-900 border-b border-gray-700 px-4"
+      className="flex items-center gap-2 bg-gray-900 border-b border-gray-700 px-3 overflow-x-auto"
       aria-label="Main navigation"
     >
-      <span className="text-sm font-bold text-indigo-400 mr-4 py-3">
+      <span className="text-xs sm:text-sm font-bold text-indigo-400 mr-2 sm:mr-4 py-3 whitespace-nowrap shrink-0">
         Autonomous Agent
       </span>
-      <ul className="flex items-center gap-1" role="menubar">
+      <ul className="flex items-center gap-1 min-w-max" role="menubar">
         {NAV_ITEMS.map(({ route, label }) => {
           const isActive = currentRoute === route;
           return (
@@ -37,7 +37,7 @@ export function Navigation({ currentRoute, onNavigate }: NavigationProps) {
                 role="menuitem"
                 onClick={() => onNavigate(route)}
                 className={`
-                  px-3 py-3 text-sm font-medium transition-colors
+                  px-2.5 sm:px-3 py-3 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap
                   border-b-2 -mb-px
                   focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900
                   ${isActive

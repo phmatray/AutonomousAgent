@@ -1,4 +1,4 @@
-import { useCallback, useRef, useMemo, useEffect } from 'react';
+import { useCallback, useRef, useMemo, useEffect, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -34,6 +34,7 @@ interface WorkflowCanvasProps {
 
 export function WorkflowCanvas({ dragState }: WorkflowCanvasProps) {
   const reactFlowRef = useRef<ReactFlowInstance<WorkflowNode> | null>(null);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const nodes = useEditorStore((s) => s.nodes);
   const edges = useEditorStore((s) => s.edges);
   const onNodesChange = useEditorStore((s) => s.onNodesChange);
@@ -64,6 +65,12 @@ export function WorkflowCanvas({ dragState }: WorkflowCanvasProps) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedNodeId, requestDeleteNode]);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: WorkflowNode) => {
@@ -108,7 +115,7 @@ export function WorkflowCanvas({ dragState }: WorkflowCanvasProps) {
     <div
       className={`flex-1 h-full w-full relative transition-all ${
         dragState ? 'ring-2 ring-control ring-inset' : ''
-      }`}
+      } min-h-[320px] min-w-0 overflow-hidden`}
       role="application"
       aria-label="Workflow canvas"
       style={{ minHeight: '100%', minWidth: 0 }}
@@ -152,12 +159,16 @@ export function WorkflowCanvas({ dragState }: WorkflowCanvasProps) {
           deleteKeyCode={null}
         >
           <Background color="#2a2a3a" gap={24} size={1} />
-          <Controls aria-label="Canvas controls" />
-          <MiniMap
-            nodeColor="#6366f1"
-            maskColor="rgba(10, 10, 15, 0.7)"
-            aria-label="Minimap overview"
-          />
+          {!isMobile && (
+            <>
+              <Controls aria-label="Canvas controls" />
+              <MiniMap
+                nodeColor="#6366f1"
+                maskColor="rgba(10, 10, 15, 0.7)"
+                aria-label="Minimap overview"
+              />
+            </>
+          )}
         </ReactFlow>
       </div>
     </div>

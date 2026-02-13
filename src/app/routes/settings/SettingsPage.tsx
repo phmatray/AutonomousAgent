@@ -116,6 +116,7 @@ export function SettingsPage() {
                   onClick={() => setShowToken(!showToken)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-300 px-2 py-1"
                   aria-label={showToken ? 'Hide token' : 'Show token'}
+                  aria-pressed={showToken}
                 >
                   {showToken ? 'Hide' : 'Show'}
                 </button>

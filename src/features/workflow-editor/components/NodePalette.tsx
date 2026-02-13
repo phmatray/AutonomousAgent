@@ -89,12 +89,13 @@ const CATEGORIES: Category[] = ['control', 'github', 'git', 'claude'];
 
 interface NodePaletteProps {
   onDragStart: (type: NodeType, x: number, y: number) => void;
+  onQuickAdd?: (type: NodeType) => void;
 }
 
-export function NodePalette({ onDragStart }: NodePaletteProps) {
+export function NodePalette({ onDragStart, onQuickAdd }: NodePaletteProps) {
   return (
     <aside
-      className="w-64 bg-bg-secondary border-r border-border-primary overflow-y-auto p-4"
+      className="w-full md:w-64 md:min-w-64 bg-bg-secondary border-b md:border-b-0 md:border-r border-border-primary overflow-y-auto p-3 md:p-4 max-h-56 md:max-h-none"
       aria-label="Node palette"
     >
       <h2 className="font-display text-sm font-semibold text-text-secondary uppercase tracking-widest mb-4 px-1">
@@ -116,10 +117,22 @@ export function NodePalette({ onDragStart }: NodePaletteProps) {
                 const Icon = item.icon;
                 return (
                   <li key={item.type}>
-                    <div
+                    <button
+                      type="button"
                       onMouseDown={(e) => {
                         e.preventDefault();
                         onDragStart(item.type, e.clientX, e.clientY);
+                      }}
+                      onClick={() => {
+                        if (onQuickAdd && window.matchMedia('(max-width: 767px)').matches) {
+                          onQuickAdd(item.type);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if ((e.key === 'Enter' || e.key === ' ') && onQuickAdd) {
+                          e.preventDefault();
+                          onQuickAdd(item.type);
+                        }
                       }}
                       className={`
                         w-full text-left px-3 py-2.5 rounded-lg border
@@ -128,8 +141,6 @@ export function NodePalette({ onDragStart }: NodePaletteProps) {
                         hover:scale-105
                         ${style.cardBg} ${style.cardBorder} ${style.cardHover}
                       `}
-                      role="button"
-                      tabIndex={0}
                       aria-label={`Drag to add ${item.label} node`}
                     >
                       <div className="flex items-center gap-2.5">
@@ -148,7 +159,7 @@ export function NodePalette({ onDragStart }: NodePaletteProps) {
                           </span>
                         </div>
                       </div>
-                    </div>
+                    </button>
                   </li>
                 );
               })}
