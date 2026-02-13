@@ -19,7 +19,7 @@ interface DragState {
 }
 
 export function EditorPage() {
-  const { params } = useRouter();
+  const { params, navigate } = useRouter();
   const urlWorkflowId = params.get('id');
 
   const workflowId = useEditorStore((s) => s.workflowId);
@@ -125,6 +125,7 @@ export function EditorPage() {
       // Update the workflow ID if it was a new workflow
       if (!workflowId && savedWorkflow.id) {
         setWorkflow(savedWorkflow.id, savedWorkflow.name, nodes, edges);
+        navigate('editor', { id: savedWorkflow.id });
       }
       // Mark as clean (not dirty)
       useEditorStore.setState({ isDirty: false });

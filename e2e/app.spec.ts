@@ -187,3 +187,12 @@ test('clears stale editor state when workflow id does not exist', async ({ page 
   await page.goto('/#/editor?id=wf-missing');
   await expect(page.getByLabel('Workflow name')).toHaveValue('Untitled Workflow');
 });
+
+test('updates editor URL with workflow id after first save', async ({ page }) => {
+  await page.goto('/#/editor');
+
+  await page.getByLabel('Workflow name').fill('URL Sync Workflow');
+  await page.getByRole('button', { name: 'Save workflow (Cmd+S)' }).click();
+
+  await expect(page).toHaveURL(/#\/editor\?id=wf-created/);
+});
