@@ -15,6 +15,7 @@ import { BacklogTable } from './BacklogTable';
 import { BacklogDetailsPanel } from './BacklogDetailsPanel';
 import { useRouter } from '@/lib/router';
 import { CenteredPage } from '@/app/components/PageLayout';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 export function BacklogPage() {
   const { params, navigate } = useRouter();
@@ -26,6 +27,7 @@ export function BacklogPage() {
   const [labelFilter, setLabelFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [linkedWorkflowFeedback, setLinkedWorkflowFeedback] = useState<string | null>(null);
+  const [pendingDeleteItemId, setPendingDeleteItemId] = useState<string | null>(null);
   const selectedItemId = params.get('item');
 
   const { data: repositories = [], isLoading: reposLoading } = useQuery<GitHubRepo[]>({
@@ -117,9 +119,28 @@ export function BacklogPage() {
     navigate('backlog');
   };
 
+  const requestDelete = (itemId: string) => {
+    setPendingDeleteItemId(itemId);
+  };
+
+  const cancelDelete = () => {
+    setPendingDeleteItemId(null);
+  };
+
+  const confirmDelete = () => {
+    if (!pendingDeleteItemId) return;
+    deleteMutation.mutate(pendingDeleteItemId);
+    setPendingDeleteItemId(null);
+  };
+
   const openWorkflow = (workflowId: string) => {
     navigate('editor', { id: workflowId });
   };
+
+  const pendingDeleteItem = useMemo(
+    () => backlogItems.find((item) => item.id === pendingDeleteItemId) ?? null,
+    [backlogItems, pendingDeleteItemId],
+  );
 
   return (
     <CenteredPage width="xl">
@@ -168,7 +189,7 @@ export function BacklogPage() {
               items={backlogItems}
               selectedItemId={selectedItemId}
               onViewDetails={openDetails}
-              onDelete={(id) => deleteMutation.mutate(id)}
+              onRequestDelete={requestDelete}
               isDeleting={deleteMutation.isPending}
             />
           </div>
@@ -187,6 +208,20 @@ export function BacklogPage() {
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={pendingDeleteItem !== null}
+        title="Remove Backlog Item"
+        message={
+          pendingDeleteItem
+            ? `Remove issue #${pendingDeleteItem.issue_number} from backlog? This does not delete the issue on GitHub.`
+            : ''
+        }
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        confirmDisabled={deleteMutation.isPending}
+        onConfirm={confirmDelete}
+        onCancel={cancelDelete}
+      />
     </CenteredPage>
   );
 }

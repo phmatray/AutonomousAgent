@@ -4,7 +4,7 @@ interface BacklogTableProps {
   items: BacklogItem[];
   selectedItemId?: string | null;
   onViewDetails: (itemId: string) => void;
-  onDelete: (id: string) => void;
+  onRequestDelete: (id: string) => void;
   isDeleting: boolean;
 }
 
@@ -17,7 +17,7 @@ export function BacklogTable({
   items,
   selectedItemId,
   onViewDetails,
-  onDelete,
+  onRequestDelete,
   isDeleting,
 }: BacklogTableProps) {
   if (items.length === 0) {
@@ -39,13 +39,13 @@ export function BacklogTable({
       <table className="w-full text-sm text-left" role="table">
         <thead>
           <tr className="border-b border-gray-700 text-gray-400">
-            <th className="px-4 py-3 font-medium" scope="col">#</th>
-            <th className="px-4 py-3 font-medium" scope="col">Title</th>
-            <th className="px-4 py-3 font-medium" scope="col">Repository</th>
-            <th className="px-4 py-3 font-medium" scope="col">State</th>
-            <th className="px-4 py-3 font-medium" scope="col">Labels</th>
-            <th className="px-4 py-3 font-medium" scope="col">Linked Workflow</th>
-            <th className="px-4 py-3 font-medium" scope="col">Actions</th>
+            <th className="sticky top-0 bg-gray-900 px-4 py-3 font-medium" scope="col">#</th>
+            <th className="sticky top-0 bg-gray-900 px-4 py-3 font-medium" scope="col">Title</th>
+            <th className="sticky top-0 bg-gray-900 px-4 py-3 font-medium" scope="col">Repository</th>
+            <th className="sticky top-0 bg-gray-900 px-4 py-3 font-medium" scope="col">State</th>
+            <th className="sticky top-0 bg-gray-900 px-4 py-3 font-medium" scope="col">Labels</th>
+            <th className="sticky top-0 bg-gray-900 px-4 py-3 font-medium" scope="col">Linked Workflow</th>
+            <th className="sticky top-0 bg-gray-900 px-4 py-3 font-medium" scope="col">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -54,7 +54,17 @@ export function BacklogTable({
               key={item.id}
               className={`border-b border-gray-800 transition-colors ${
                 selectedItemId === item.id ? 'bg-indigo-950/20' : 'hover:bg-gray-800/50'
-              }`}
+              } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500`}
+              tabIndex={0}
+              aria-label={`Open details for issue #${item.issue_number}`}
+              title="Open issue details"
+              onClick={() => onViewDetails(item.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onViewDetails(item.id);
+                }
+              }}
             >
               <td className="px-4 py-3 text-gray-400 font-mono">
                 {item.issue_number}
@@ -64,6 +74,7 @@ export function BacklogTable({
                   href={item.html_url}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={(event) => event.stopPropagation()}
                   className="text-white hover:text-indigo-400 transition-colors"
                   aria-label={`Issue #${item.issue_number}: ${item.title} (opens in new tab)`}
                 >
@@ -109,7 +120,10 @@ export function BacklogTable({
               <td className="px-4 py-3">
                 <button
                   type="button"
-                  onClick={() => onViewDetails(item.id)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onViewDetails(item.id);
+                  }}
                   className="mr-3 text-xs text-indigo-400 hover:text-indigo-300 transition-colors focus:outline-none focus:underline"
                   aria-label={`View issue #${item.issue_number} details`}
                 >
@@ -117,7 +131,10 @@ export function BacklogTable({
                 </button>
                 <button
                   type="button"
-                  onClick={() => onDelete(item.id)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRequestDelete(item.id);
+                  }}
                   disabled={isDeleting}
                   className="text-xs text-red-400 hover:text-red-300 transition-colors disabled:opacity-50 focus:outline-none focus:underline"
                   aria-label={`Remove issue #${item.issue_number} from backlog`}
