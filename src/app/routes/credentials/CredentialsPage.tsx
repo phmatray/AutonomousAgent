@@ -749,28 +749,33 @@ export function CredentialsPage() {
 
       {activeTab === 'activity' && (
       <SectionCard className="mb-6" aria-labelledby="credential-audit-heading">
-        <div className="flex items-center justify-between mb-4">
-          <h2 id="credential-audit-heading" className="text-lg font-semibold text-white">
-            Credential Activity
-          </h2>
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={exportFilteredCredentialAudit}
-              disabled={filteredCredentialAuditEvents.length === 0 || hasInvalidAuditDateRange}
-              variant="secondary"
-              size="sm"
-            >
-              Export JSON
-            </Button>
-            <Button
-              onClick={() => void refreshCredentialAudit()}
-              disabled={isRefreshingCredentialAudit}
-              variant="secondary"
-              size="sm"
-            >
-              {isRefreshingCredentialAudit ? 'Refreshing...' : 'Refresh'}
-            </Button>
+        <div className="sticky top-0 z-20 -mx-6 mb-4 border-b border-gray-700 bg-gray-800/95 px-6 py-3 backdrop-blur">
+          <div className="flex items-center justify-between">
+            <h2 id="credential-audit-heading" className="text-lg font-semibold text-white">
+              Credential Activity
+            </h2>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={exportFilteredCredentialAudit}
+                disabled={filteredCredentialAuditEvents.length === 0 || hasInvalidAuditDateRange}
+                variant="secondary"
+                size="sm"
+              >
+                Export JSON
+              </Button>
+              <Button
+                onClick={() => void refreshCredentialAudit()}
+                disabled={isRefreshingCredentialAudit}
+                variant="secondary"
+                size="sm"
+              >
+                {isRefreshingCredentialAudit ? 'Refreshing...' : 'Refresh'}
+              </Button>
+            </div>
           </div>
+          {!credentialAuditError && credentialAuditEvents.length > 0 && (
+            <p className="mt-2 text-xs text-gray-400">Filters stay pinned while you scroll activity events.</p>
+          )}
         </div>
 
         {credentialAuditError ? (

@@ -1,3 +1,5 @@
+import { Input } from '@/components/ui/primitives';
+
 interface BacklogFiltersProps {
   stateFilter: string;
   onStateFilterChange: (value: string) => void;
@@ -18,7 +20,9 @@ export function BacklogFilters({
   availableLabels,
 }: BacklogFiltersProps) {
   return (
-    <div className="flex flex-wrap items-center gap-3 mb-4">
+    <div className="sticky top-0 z-20 mb-4 rounded-lg border border-gray-700 bg-gray-900/90 backdrop-blur px-3 py-3">
+      <p className="text-xs text-gray-400 mb-2">Filter backlog</p>
+      <div className="flex flex-wrap items-center gap-3">
       <div>
         <label htmlFor="state-filter" className="sr-only">
           Filter by state
@@ -60,15 +64,16 @@ export function BacklogFilters({
         <label htmlFor="search-query" className="sr-only">
           Search issues
         </label>
-        <input
+        <Input
           id="search-query"
           type="text"
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
           placeholder="Search issues..."
-          className="h-10 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="h-10 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 text-sm text-white placeholder-gray-500"
           aria-label="Search issues by title or body"
         />
+      </div>
       </div>
     </div>
   );
