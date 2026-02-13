@@ -362,7 +362,15 @@ function SearchAndSortControls({
   );
 }
 
-function EmptyState({ onNavigateToEditor }: { onNavigateToEditor: (id?: string) => void }) {
+function EmptyState({
+  onNavigateToEditor,
+  onNavigateToCredentials,
+  onNavigateToBacklog,
+}: {
+  onNavigateToEditor: (id?: string) => void;
+  onNavigateToCredentials: () => void;
+  onNavigateToBacklog: () => void;
+}) {
   return (
     <section className="rounded-xl border border-gray-700 bg-gray-900/70 p-6">
       <div className="flex items-start gap-4">
@@ -374,18 +382,43 @@ function EmptyState({ onNavigateToEditor }: { onNavigateToEditor: (id?: string) 
           <p className="mt-1 text-sm text-gray-300">
             Create your first scheduled or on-demand workflow to automate engineering tasks.
           </p>
-          <ul className="mt-4 space-y-1 text-sm text-gray-300">
-            <li>1. Add a trigger node (manual, cron, webhook, or state).</li>
-            <li>2. Connect GitHub and Claude actions.</li>
-            <li>3. Publish to enable execution.</li>
-          </ul>
-          <button
-            type="button"
-            onClick={() => onNavigateToEditor()}
-            className="mt-5 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            Create Workflow
-          </button>
+          <ol className="mt-4 space-y-2 text-sm text-gray-300">
+            <li className="rounded-lg border border-gray-700 bg-gray-900/80 px-3 py-2">
+              <span className="text-gray-100">1. Connect credentials</span>
+              <span className="block text-xs text-gray-400 mt-0.5">Save GitHub token and Claude key.</span>
+            </li>
+            <li className="rounded-lg border border-gray-700 bg-gray-900/80 px-3 py-2">
+              <span className="text-gray-100">2. Pull candidate issues</span>
+              <span className="block text-xs text-gray-400 mt-0.5">Sync repository issues into backlog.</span>
+            </li>
+            <li className="rounded-lg border border-gray-700 bg-gray-900/80 px-3 py-2">
+              <span className="text-gray-100">3. Build and publish workflow</span>
+              <span className="block text-xs text-gray-400 mt-0.5">Add trigger and execution nodes, then publish.</span>
+            </li>
+          </ol>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onNavigateToCredentials}
+              className="px-3 py-2 bg-gray-800 text-gray-100 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
+            >
+              Connect Credentials
+            </button>
+            <button
+              type="button"
+              onClick={onNavigateToBacklog}
+              className="px-3 py-2 bg-gray-800 text-gray-100 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
+            >
+              Sync Backlog
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigateToEditor()}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              Create Workflow
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -556,7 +589,11 @@ export function DashboardPage() {
       )}
 
       {!isLoading && !loadError && workflows.length === 0 && (
-        <EmptyState onNavigateToEditor={navigateToEditor} />
+        <EmptyState
+          onNavigateToEditor={navigateToEditor}
+          onNavigateToCredentials={() => navigate('credentials')}
+          onNavigateToBacklog={() => navigate('backlog')}
+        />
       )}
 
       {!isLoading && workflows.length > 0 && (
