@@ -3,6 +3,16 @@ use crate::services::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+pub(crate) async fn ensure_github_authenticated(state: &AppState) -> Result<()> {
+    if state.github.get_authenticated_user().await.is_ok() {
+        return Ok(());
+    }
+
+    let token = state.storage.get_github_token()?;
+    state.github.authenticate(&token).await?;
+    Ok(())
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthResult {
     pub success: bool,
@@ -53,6 +63,7 @@ pub async fn authenticate_github(token: String, state: State<'_, AppState>) -> R
 
 #[tauri::command]
 pub async fn list_repositories(state: State<'_, AppState>) -> Result<Vec<Repository>> {
+    ensure_github_authenticated(&state).await?;
     let repos = state.github.list_repositories().await?;
 
     Ok(repos
@@ -75,6 +86,7 @@ pub async fn list_issues(
     repo: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<Issue>> {
+    ensure_github_authenticated(&state).await?;
     let issues = state.github.list_issues(&owner, &repo).await?;
 
     Ok(issues
@@ -100,6 +112,7 @@ pub async fn create_pull_request(
     base: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value> {
+    ensure_github_authenticated(&state).await?;
     let pr = state
         .github
         .create_pull_request(&owner, &repo, &title, &body, &head, &base)
@@ -114,6 +127,10 @@ pub async fn create_pull_request(
 
 #[tauri::command]
 pub async fn get_auth_status(state: State<'_, AppState>) -> Result<serde_json::Value> {
+    if let Err(e) = ensure_github_authenticated(&state).await {
+        eprintln!("GitHub session restore unavailable: {}", e);
+    }
+
     match state.github.get_authenticated_user().await {
         Ok(user) => Ok(serde_json::json!({
             "authenticated": true,

@@ -28,6 +28,7 @@ pub async fn sync_github_issues_to_backlog(
     repo: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<BacklogItem>> {
+    crate::commands::github::ensure_github_authenticated(&state).await?;
     let issues = state.github.list_issues(&owner, &repo).await?;
     state
         .backlog

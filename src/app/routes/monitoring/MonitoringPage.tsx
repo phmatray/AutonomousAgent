@@ -40,6 +40,60 @@ function formatExportError(error: unknown): string {
   }
 }
 
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Fall through to legacy copy API for environments that block clipboard permissions.
+    }
+  }
+
+  if (typeof document === 'undefined' || !document.body) {
+    throw new Error('Clipboard is unavailable in this context');
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '-9999px';
+  textarea.style.left = '-9999px';
+
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  const copied = document.execCommand('copy');
+  document.body.removeChild(textarea);
+
+  if (!copied) {
+    throw new Error('Failed to copy debug bundle to clipboard');
+  }
+}
+
+function downloadDebugBundle(text: string): void {
+  if (typeof document === 'undefined') {
+    throw new Error('Unable to export debug bundle in this context');
+  }
+
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  const fileName = `debug-bundle-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.json`;
+
+  const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
 function getExecutionContextEntries(context: unknown): ExecutionContextEntry[] {
   if (!Array.isArray(context)) return [];
   return context.filter((entry): entry is ExecutionContextEntry =>
@@ -234,24 +288,29 @@ export function MonitoringPage() {
   const handleCancel = () => send({ type: 'CANCEL_SELECTED' });
   const [copyState, setCopyState] = useState<{
     isCopying: boolean;
-    copied: boolean;
+    copied: 'none' | 'clipboard' | 'download';
     error: string | null;
   }>({
     isCopying: false,
-    copied: false,
+    copied: 'none',
     error: null,
   });
 
   const handleCopyDebugBundle = async () => {
     if (!selectedExecutionId || copyState.isCopying) return;
-    setCopyState({ isCopying: true, copied: false, error: null });
+    setCopyState({ isCopying: true, copied: 'none', error: null });
     try {
       const result = await copyDebugBundle(selectedExecutionId);
-      await navigator.clipboard.writeText(result.bundleJson);
-      setCopyState({ isCopying: false, copied: true, error: null });
+      try {
+        await copyTextToClipboard(result.bundleJson);
+        setCopyState({ isCopying: false, copied: 'clipboard', error: null });
+      } catch {
+        downloadDebugBundle(result.bundleJson);
+        setCopyState({ isCopying: false, copied: 'download', error: null });
+      }
     } catch (error) {
       const message = formatExportError(error);
-      setCopyState({ isCopying: false, copied: false, error: message });
+      setCopyState({ isCopying: false, copied: 'none', error: message });
     }
   };
 
@@ -341,11 +400,16 @@ export function MonitoringPage() {
                 )}
               </div>
             </header>
-            {(copyState.copied || copyState.error) && (
+            {(copyState.copied !== 'none' || copyState.error) && (
               <div className="px-4 py-2 border-b border-gray-800 bg-gray-900/80 text-xs">
-                {copyState.copied && (
+                {copyState.copied === 'clipboard' && (
                   <p className="text-green-400">
                     Debug bundle copied to clipboard.
+                  </p>
+                )}
+                {copyState.copied === 'download' && (
+                  <p className="text-green-400">
+                    Clipboard unavailable. Debug bundle downloaded as JSON.
                   </p>
                 )}
                 {copyState.error && (
