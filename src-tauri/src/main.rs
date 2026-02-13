@@ -99,6 +99,7 @@ fn main() {
             commands::workflow::create_workflow,
             commands::workflow::update_workflow,
             commands::workflow::delete_workflow,
+            commands::workflow::preflight_workflow,
             commands::workflow::execute_workflow,
             commands::workflow::list_executions,
             commands::workflow::get_execution_logs,

@@ -71,7 +71,7 @@ export interface WorkflowExecution {
   startedAt?: string;
   completedAt?: string;
   error?: any;
-  context?: Record<string, any>;
+  context?: unknown;
   currentNodeId?: string;
 }
 
@@ -86,6 +86,20 @@ export interface NodeExecution {
   startedAt?: string;
   completedAt?: string;
   retryCount: number;
+}
+
+export interface WorkflowPreflightIssue {
+  level: 'ERROR' | 'WARN';
+  code: string;
+  message: string;
+  nodeId?: string;
+  hint?: string;
+}
+
+export interface WorkflowPreflightResult {
+  valid: boolean;
+  issues: WorkflowPreflightIssue[];
+  generatedAt: string;
 }
 
 export interface ExecutionLog {

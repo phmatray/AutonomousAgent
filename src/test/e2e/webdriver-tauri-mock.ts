@@ -147,6 +147,14 @@ export function installWebDriverTauriMock() {
       return execution;
     }
 
+    if (cmd === 'preflight_workflow') {
+      return {
+        valid: true,
+        issues: [],
+        generatedAt: new Date().toISOString(),
+      };
+    }
+
     if (cmd === 'list_executions') return state.executions;
 
     if (cmd === 'get_execution_logs') {

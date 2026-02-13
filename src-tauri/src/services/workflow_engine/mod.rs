@@ -1,6 +1,7 @@
 pub mod executor;
 pub mod node_registry;
 pub mod nodes;
+pub mod preflight;
 pub mod scheduler;
 pub mod state_machine;
 
@@ -8,6 +9,7 @@ use crate::errors::{AppError, Result};
 use crate::models::workflow::{Workflow, WorkflowExecution};
 use executor::{RetryPolicy, WorkflowExecutionResult};
 use node_registry::{build_default_registry, ClaudeProvider, NodeRegistry, ServiceProvider};
+use preflight::WorkflowPreflightResult;
 use scheduler::Scheduler;
 use serde_json::json;
 use state_machine::WorkflowState;
@@ -205,6 +207,12 @@ impl WorkflowEngine {
     }
 
     // ----- Execution operations -----
+
+    /// Run static/dynamic preflight checks for a workflow definition.
+    pub async fn preflight_workflow(&self, workflow: &Workflow) -> Result<WorkflowPreflightResult> {
+        let services = self.services.read().await;
+        Ok(preflight::run_preflight(workflow, &self.registry, services.as_ref()).await)
+    }
 
     /// Execute a workflow by ID.
     pub async fn execute_workflow(

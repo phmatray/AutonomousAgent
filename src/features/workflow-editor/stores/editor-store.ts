@@ -11,7 +11,7 @@ import {
   type Connection,
 } from '@xyflow/react';
 import type { NodeType } from '@/types/workflow';
-import { NODE_SCHEMAS } from '@/features/workflow-editor/config-schemas';
+import { NODE_METADATA, NODE_SCHEMAS } from '@/features/workflow-editor/config-schemas';
 import type { TemplateVariable } from '@/components/ui/form';
 
 interface NodeData extends Record<string, unknown> {
@@ -62,21 +62,13 @@ interface EditorState {
   validateNodeConfig: (nodeId: string) => NodeValidationResult;
 }
 
-const NODE_LABELS: Record<NodeType, string> = {
-  'github.sync': 'Sync Repository',
-  'github.readIssues': 'Read Issues',
-  'github.createPR': 'Create PR',
-  'git.worktree': 'Git Worktree',
-  'git.branch': 'Git Branch',
-  'git.commit': 'Git Commit',
-  'claude.analyze': 'Claude Analyze',
-  'claude.plan': 'Claude Plan',
-  'claude.apply': 'Claude Apply',
-  trigger: 'Trigger',
-  condition: 'Condition',
-  loop: 'Loop',
-  delay: 'Delay',
-};
+const NODE_LABELS: Record<NodeType, string> = Object.entries(NODE_METADATA).reduce(
+  (acc, [nodeType, meta]) => {
+    acc[nodeType as NodeType] = meta.label;
+    return acc;
+  },
+  {} as Record<NodeType, string>,
+);
 
 function isConnectionValid(connection: Connection, nodes: WorkflowNode[], edges: WorkflowEdge[]): boolean {
   if (connection.source === connection.target) return false;

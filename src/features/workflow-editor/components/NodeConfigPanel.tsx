@@ -339,7 +339,7 @@ export function NodeConfigPanel() {
 
   return (
     <aside
-      className="w-80 bg-bg-secondary border-l border-border-primary overflow-y-auto flex flex-col"
+      className="w-80 h-full min-h-0 bg-bg-secondary border-l border-border-primary overflow-y-auto flex flex-col"
       aria-label="Node configuration"
     >
       {/* Header */}

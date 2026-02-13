@@ -26,6 +26,19 @@ const LOG_LEVEL_STYLES: Record<string, string> = {
 interface ExecutionContextEntry {
   node_id?: string;
   status?: string;
+  started_at?: string;
+  completed_at?: string;
+  duration_ms?: number;
+  retry_count?: number;
+  policy?: {
+    max_retries?: number;
+    retry_delay_ms?: number;
+    backoff?: string;
+    timeout_secs?: number | null;
+    continue_on_error?: boolean;
+  };
+  resolved_config?: Record<string, unknown> | null;
+  input?: Record<string, unknown> | null;
   output?: Record<string, unknown> | null;
   error?: string | null;
 }
@@ -153,6 +166,76 @@ function NodeOutputsPanel({ contextEntries }: { contextEntries: ExecutionContext
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function NodeRunInspector({ contextEntries }: { contextEntries: ExecutionContextEntry[] }) {
+  if (contextEntries.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="px-4 py-3 border-b border-gray-800 bg-gray-900/80 space-y-3">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-300">Run Inspector</h4>
+      <div className="space-y-2 max-h-72 overflow-y-auto">
+        {contextEntries.map((entry, index) => {
+          const retries = entry.retry_count ?? 0;
+          const durationMs = entry.duration_ms ?? 0;
+          const status = entry.status ?? 'UNKNOWN';
+          const statusColor = status === 'COMPLETED'
+            ? 'text-green-300'
+            : status === 'FAILED'
+              ? 'text-red-300'
+              : status === 'SKIPPED'
+                ? 'text-yellow-300'
+                : 'text-gray-300';
+
+          return (
+            <details key={`${entry.node_id ?? 'unknown'}-${index}`} className="rounded border border-gray-700 bg-gray-900/60 p-3">
+              <summary className="cursor-pointer text-xs text-gray-200 flex items-center justify-between gap-2">
+                <span className="font-mono">{entry.node_id ?? 'unknown'}</span>
+                <span className={`font-medium ${statusColor}`}>{status}</span>
+                <span className="text-gray-400">{durationMs}ms</span>
+                <span className="text-gray-400">retries: {retries}</span>
+              </summary>
+              <div className="mt-2 space-y-2">
+                <p className="text-[11px] text-gray-400">
+                  Started: {entry.started_at ? new Date(entry.started_at).toLocaleString() : 'n/a'}
+                </p>
+                <p className="text-[11px] text-gray-400">
+                  Completed: {entry.completed_at ? new Date(entry.completed_at).toLocaleString() : 'n/a'}
+                </p>
+                {entry.policy && (
+                  <pre className="text-xs text-gray-300 whitespace-pre-wrap break-all">
+                    {JSON.stringify({ policy: entry.policy }, null, 2)}
+                  </pre>
+                )}
+                {entry.resolved_config && (
+                  <pre className="text-xs text-gray-300 whitespace-pre-wrap break-all">
+                    {JSON.stringify({ resolved_config: entry.resolved_config }, null, 2)}
+                  </pre>
+                )}
+                {entry.input && (
+                  <pre className="text-xs text-gray-300 whitespace-pre-wrap break-all">
+                    {JSON.stringify({ input: entry.input }, null, 2)}
+                  </pre>
+                )}
+                {entry.output && (
+                  <pre className="text-xs text-gray-300 whitespace-pre-wrap break-all">
+                    {JSON.stringify({ output: entry.output }, null, 2)}
+                  </pre>
+                )}
+                {entry.error && (
+                  <p className="text-xs text-red-300">
+                    {entry.error}
+                  </p>
+                )}
+              </div>
+            </details>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -447,6 +530,7 @@ export function MonitoringPage() {
               </div>
             )}
             <NodeOutputsPanel contextEntries={contextEntries} />
+            <NodeRunInspector contextEntries={contextEntries} />
             <LogViewer logs={allLogs} isStreaming={isStreaming} />
           </>
         ) : (

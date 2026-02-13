@@ -7,14 +7,20 @@ import { NodePalette } from '@/features/workflow-editor/components/NodePalette';
 import { NodeConfigPanel } from '@/features/workflow-editor/components/NodeConfigPanel';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useEditorStore } from '@/features/workflow-editor/stores/editor-store';
-import { createWorkflow, updateWorkflow, getWorkflow, executeWorkflow } from '@/lib/api/workflow';
+import {
+  createWorkflow,
+  updateWorkflow,
+  getWorkflow,
+  executeWorkflow,
+  preflightWorkflow,
+} from '@/lib/api/workflow';
 import { getAuthStatus } from '@/lib/api/github';
 import { useRouter } from '@/lib/router';
 import { editorFlowMachine } from './editor-flow-machine';
 import { editorDomainMachine } from './editor-domain-machine';
 import { parseImportedWorkflow, serializeWorkflowForExport } from './workflow-io';
 import { WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
-import type { NodeType, Workflow } from '@/types/workflow';
+import type { NodeType, Workflow, WorkflowPreflightIssue } from '@/types/workflow';
 
 interface DragState {
   type: NodeType;
@@ -125,6 +131,7 @@ export function EditorPage() {
   }, [pendingDeleteNodeId, nodes, edges]);
 
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [preflightIssues, setPreflightIssues] = useState<WorkflowPreflightIssue[]>([]);
   const [flowState, sendFlowEvent] = useMachine(editorFlowMachine);
   const importInputRef = useRef<HTMLInputElement>(null);
   const saveGlow = flowState.context.saveGlow;
@@ -232,9 +239,22 @@ export function EditorPage() {
 
     sendFlowEvent({ type: 'EXECUTE_REQUEST' });
     try {
+      const payload = buildWorkflowPayload();
+      const preflight = await preflightWorkflow(payload);
+      setPreflightIssues(preflight.issues);
+
+      const preflightErrors = preflight.issues.filter((issue) => issue.level === 'ERROR');
+      if (preflightErrors.length > 0) {
+        sendFlowEvent({
+          type: 'EXECUTE_FAILURE',
+          message: `Preflight failed with ${preflightErrors.length} error${preflightErrors.length === 1 ? '' : 's'}.`,
+        });
+        return;
+      }
+
       let targetWorkflowId = workflowId;
       if (!targetWorkflowId) {
-        const createdWorkflow = await createWorkflow(buildWorkflowPayload());
+        const createdWorkflow = await createWorkflow(payload);
         targetWorkflowId = createdWorkflow.id;
         sendDomainEvent({
           type: 'WORKFLOW_CREATED',
@@ -531,6 +551,39 @@ export function EditorPage() {
           </motion.button>
         </div>
       </header>
+      {preflightIssues.length > 0 && (
+        <section className="px-5 py-2 bg-bg-secondary border-b border-border-primary">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
+              Preflight Results
+            </h3>
+            <button
+              type="button"
+              onClick={() => setPreflightIssues([])}
+              className="text-xs text-text-tertiary hover:text-text-secondary"
+            >
+              Dismiss
+            </button>
+          </div>
+          <ul className="space-y-1 max-h-32 overflow-y-auto">
+            {preflightIssues.map((issue, index) => (
+              <li
+                key={`${issue.code}-${issue.nodeId ?? 'global'}-${index}`}
+                className={`text-xs px-2 py-1 rounded border ${
+                  issue.level === 'ERROR'
+                    ? 'border-state-error/40 bg-state-error/10 text-state-error'
+                    : 'border-state-warning/40 bg-state-warning/10 text-state-warning'
+                }`}
+              >
+                <span className="font-mono mr-2">{issue.code}</span>
+                {issue.nodeId ? <span className="font-mono mr-2">[{issue.nodeId}]</span> : null}
+                <span>{issue.message}</span>
+                {issue.hint ? <span className="ml-2 opacity-80">Hint: {issue.hint}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <div className="flex flex-1 overflow-hidden flex-col md:flex-row min-w-0">
         <NodePalette onDragStart={handleDragStart} onQuickAdd={handleQuickAddNode} />
         <WorkflowCanvas dragState={dragState} />
@@ -541,7 +594,7 @@ export function EditorPage() {
               animate={{ width: 320, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="overflow-hidden flex-shrink-0"
+              className="overflow-hidden flex-shrink-0 h-full min-h-0"
             >
               <NodeConfigPanel />
             </motion.div>

@@ -3,6 +3,7 @@ import type {
   Workflow,
   WorkflowExecution,
   ExecutionLog,
+  WorkflowPreflightResult,
 } from '@/types/workflow';
 
 export async function listWorkflows(): Promise<Workflow[]> {
@@ -35,6 +36,12 @@ export async function executeWorkflow(
   triggerType?: string,
 ): Promise<WorkflowExecution> {
   return invoke('execute_workflow', { workflowId, triggerType });
+}
+
+export async function preflightWorkflow(
+  workflow: Workflow,
+): Promise<WorkflowPreflightResult> {
+  return invoke('preflight_workflow', { workflow });
 }
 
 export async function listExecutions(

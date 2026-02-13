@@ -1,7 +1,9 @@
 use crate::errors::{AppError, Result};
 use async_trait::async_trait;
+use regex::Regex;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
 
 /// Shared execution context passed between nodes during a workflow run.
@@ -122,8 +124,15 @@ impl ExecutionContext {
                     return Ok(value.clone());
                 }
 
-                // Use regex to find all {{...}} patterns
-                let re = regex::Regex::new(r"\{\{([^}]+)\}\}").unwrap();
+                let re = template_regex();
+
+                // Preserve native JSON type when the whole value is exactly one template.
+                if let Some(capture) = re.captures(s) {
+                    if capture.get(0).map(|m| m.as_str()) == Some(s) {
+                        return self.resolve_reference(capture.get(0).unwrap().as_str());
+                    }
+                }
+
                 let mut result = s.clone();
                 let mut errors = Vec::new();
 
@@ -177,6 +186,11 @@ impl ExecutionContext {
             other => Ok(other.clone()),
         }
     }
+}
+
+fn template_regex() -> &'static Regex {
+    static TEMPLATE_REGEX: OnceLock<Regex> = OnceLock::new();
+    TEMPLATE_REGEX.get_or_init(|| Regex::new(r"\{\{([^}]+)\}\}").unwrap())
 }
 
 /// The trait every node type must implement.
@@ -443,6 +457,30 @@ mod tests {
         let input = serde_json::json!({"path": "feature/{{missing.id}}-fix"});
         let result = ctx.resolve_value(&input);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_value_preserves_array_type_for_full_template() {
+        let ctx = ExecutionContext::new(Value::Object(Default::default()));
+        ctx.set_node_output(
+            "issues".into(),
+            serde_json::json!({"items": [{"id": 1}, {"id": 2}]}),
+        );
+
+        let input = serde_json::json!({"items": "{{issues.items}}"});
+        let resolved = ctx.resolve_value(&input).unwrap();
+        assert!(resolved["items"].is_array());
+        assert_eq!(resolved["items"][0]["id"], 1);
+    }
+
+    #[test]
+    fn test_resolve_value_preserves_number_type_for_full_template() {
+        let ctx = ExecutionContext::new(Value::Object(Default::default()));
+        ctx.set_node_output("stats".into(), serde_json::json!({"count": 42}));
+
+        let input = serde_json::json!({"count": "{{stats.count}}"});
+        let resolved = ctx.resolve_value(&input).unwrap();
+        assert_eq!(resolved["count"], serde_json::json!(42));
     }
 
     #[test]

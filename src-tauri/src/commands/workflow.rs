@@ -1,6 +1,7 @@
 use crate::errors::Result;
 use crate::models::workflow::{Workflow, WorkflowExecution};
 use crate::services::workflow_engine::executor::WorkflowExecutionResult;
+use crate::services::workflow_engine::preflight::WorkflowPreflightResult;
 use crate::services::AppState;
 use chrono;
 use serde::{Deserialize, Serialize};
@@ -60,6 +61,14 @@ pub async fn execute_workflow(
         .engine
         .execute_workflow(&workflow_id, trigger_type.as_deref())
         .await
+}
+
+#[tauri::command]
+pub async fn preflight_workflow(
+    workflow: Workflow,
+    state: State<'_, AppState>,
+) -> Result<WorkflowPreflightResult> {
+    state.engine.preflight_workflow(&workflow).await
 }
 
 #[tauri::command]

@@ -15,6 +15,7 @@ import {
   Play,
 } from 'lucide-react';
 import type { NodeType } from '@/types/workflow';
+import { NODE_METADATA } from '@/features/workflow-editor/config-schemas';
 
 type Category = 'control' | 'github' | 'git' | 'claude';
 
@@ -25,21 +26,44 @@ interface PaletteItem {
   icon: LucideIcon;
 }
 
-const PALETTE_ITEMS: PaletteItem[] = [
-  { type: 'trigger', label: 'Trigger', category: 'control', icon: Zap },
-  { type: 'condition', label: 'Condition', category: 'control', icon: GitFork },
-  { type: 'loop', label: 'Loop', category: 'control', icon: Repeat },
-  { type: 'delay', label: 'Delay', category: 'control', icon: Timer },
-  { type: 'github.sync', label: 'Sync Repository', category: 'github', icon: RefreshCw },
-  { type: 'github.readIssues', label: 'Read Issues', category: 'github', icon: BookOpen },
-  { type: 'github.createPR', label: 'Create PR', category: 'github', icon: GitPullRequest },
-  { type: 'git.worktree', label: 'Git Worktree', category: 'git', icon: FolderTree },
-  { type: 'git.branch', label: 'Git Branch', category: 'git', icon: GitBranch },
-  { type: 'git.commit', label: 'Git Commit', category: 'git', icon: GitCommitHorizontal },
-  { type: 'claude.analyze', label: 'Claude Analyze', category: 'claude', icon: Search },
-  { type: 'claude.plan', label: 'Claude Plan', category: 'claude', icon: FileText },
-  { type: 'claude.apply', label: 'Claude Apply', category: 'claude', icon: Play },
+const NODE_ICONS: Record<NodeType, LucideIcon> = {
+  trigger: Zap,
+  condition: GitFork,
+  loop: Repeat,
+  delay: Timer,
+  'github.sync': RefreshCw,
+  'github.readIssues': BookOpen,
+  'github.createPR': GitPullRequest,
+  'git.worktree': FolderTree,
+  'git.branch': GitBranch,
+  'git.commit': GitCommitHorizontal,
+  'claude.analyze': Search,
+  'claude.plan': FileText,
+  'claude.apply': Play,
+};
+
+const PALETTE_ORDER: NodeType[] = [
+  'trigger',
+  'condition',
+  'loop',
+  'delay',
+  'github.sync',
+  'github.readIssues',
+  'github.createPR',
+  'git.worktree',
+  'git.branch',
+  'git.commit',
+  'claude.analyze',
+  'claude.plan',
+  'claude.apply',
 ];
+
+const PALETTE_ITEMS: PaletteItem[] = PALETTE_ORDER.map((type) => ({
+  type,
+  label: NODE_METADATA[type].label,
+  category: NODE_METADATA[type].category,
+  icon: NODE_ICONS[type],
+}));
 
 interface CategoryStyle {
   label: string;
