@@ -169,17 +169,37 @@ impl GitHubClient {
     pub async fn list_issues(&self, owner: &str, repo: &str) -> Result<Vec<GithubIssue>> {
         let client = self.get_client().await?;
 
-        let page = client
+        let mut page = client
             .issues(owner, repo)
             .list()
             .state(octocrab::params::State::Open)
-            .per_page(30)
+            .per_page(100)
             .send()
             .await
             .map_err(|e| AppError::GitHub(format!("Failed to list issues: {}", e)))?;
 
-        let issues = page
-            .items
+        let mut issues = Vec::new();
+
+        loop {
+            issues.extend(Self::normalize_issues(page.items));
+            if let Some(next_page) = page.next.as_ref() {
+                page = client
+                    .get_page(next_page)
+                    .await
+                    .map_err(|e| AppError::GitHub(format!("Failed to list issues: {}", e)))?
+                    .ok_or_else(|| {
+                        AppError::GitHub("Unexpected empty GitHub issues page".to_string())
+                    })?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(issues)
+    }
+
+    fn normalize_issues(issues: Vec<octocrab::models::issues::Issue>) -> Vec<GithubIssue> {
+        issues
             .into_iter()
             // Filter out pull requests (they also appear in the issues endpoint)
             .filter(|issue| issue.pull_request.is_none())
@@ -191,9 +211,7 @@ impl GitHubClient {
                 labels: issue.labels.iter().map(|l| l.name.clone()).collect(),
                 assignees: issue.assignees.iter().map(|a| a.login.clone()).collect(),
             })
-            .collect();
-
-        Ok(issues)
+            .collect()
     }
 
     pub async fn create_branch(
@@ -342,5 +360,46 @@ impl GitHubClient {
                 .to_string(),
             body: response["body"].as_str().unwrap_or(body).to_string(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GitHubClient;
+    use octocrab::models::issues::Issue;
+
+    #[test]
+    fn normalize_issues_filters_pull_requests_and_maps_fields() {
+        let issue_json = serde_json::json!({
+            "number": 7,
+            "title": "Enhance issue sync",
+            "body": "Load all pages",
+            "state": "open",
+            "labels": [{ "name": "enhancement" }],
+            "assignees": [{ "login": "alice" }],
+            "pull_request": null
+        });
+        let pull_request_json = serde_json::json!({
+            "number": 8,
+            "title": "PR should be filtered",
+            "body": null,
+            "state": "open",
+            "labels": [],
+            "assignees": [],
+            "pull_request": { "url": "https://api.github.com/repos/o/r/pulls/8" }
+        });
+
+        let issues: Vec<Issue> = vec![
+            serde_json::from_value(issue_json).expect("valid issue payload"),
+            serde_json::from_value(pull_request_json).expect("valid pull request payload"),
+        ];
+
+        let normalized = GitHubClient::normalize_issues(issues);
+        assert_eq!(normalized.len(), 1);
+        assert_eq!(normalized[0].number, 7);
+        assert_eq!(normalized[0].title, "Enhance issue sync");
+        assert_eq!(normalized[0].labels, vec!["enhancement"]);
+        assert_eq!(normalized[0].assignees, vec!["alice"]);
+        assert_eq!(normalized[0].state, "open");
     }
 }
