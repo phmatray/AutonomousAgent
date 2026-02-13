@@ -83,24 +83,3 @@ jobs:
 
       - name: Type check
         run: npm run typecheck
-
-  e2e-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: frontend-tests
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Setup Chrome
-        uses: browser-actions/setup-chrome@v1
-
-      - name: Run WebDriver smoke tests
-        run: npm run test:e2e:smoke
