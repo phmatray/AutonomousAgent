@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useEditorStore } from '@/features/workflow-editor/stores/editor-store';
-import { getNodeSchema, type FieldSchema } from '@/features/workflow-editor/config-schemas';
+import { getNodeLabel, getNodeSchema, type FieldSchema } from '@/features/workflow-editor/config-schemas';
 import { listGitHubCredentials } from '@/lib/api/github';
 import {
   TextInput,
@@ -335,6 +335,7 @@ export function NodeConfigPanel() {
 
   if (!node) return null;
 
+  const nodeLabel = getNodeLabel(node.data.nodeType);
   const config = (node.data.config ?? {}) as Record<string, unknown>;
 
   return (
@@ -346,13 +347,13 @@ export function NodeConfigPanel() {
       <div className="sticky top-0 bg-bg-secondary z-10 border-b border-border-secondary px-4 py-3">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-sm font-semibold text-text-primary truncate">
-            {node.data.label}
+            {nodeLabel}
           </h2>
           <button
             type="button"
             onClick={() => requestDeleteNode(node.id)}
             className="text-xs text-state-error/80 hover:text-state-error px-2 py-1 rounded-md hover:bg-state-error/10 transition-colors"
-            aria-label={`Delete ${node.data.label} node`}
+            aria-label={`Delete ${nodeLabel} node`}
           >
             Delete
           </button>

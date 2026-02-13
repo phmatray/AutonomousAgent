@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseImportedWorkflow,
   serializeWorkflowForExport,
+  toEditorGraph,
   WORKFLOW_EXPORT_SCHEMA_VERSION,
 } from './workflow-io';
 import type { Workflow } from '@/types/workflow';
@@ -75,5 +76,28 @@ describe('workflow-io', () => {
     });
 
     expect(() => parseImportedWorkflow(bad)).toThrow('Unsupported workflow schemaVersion');
+  });
+
+  it('maps workflow nodes to editor graph with catalog labels', () => {
+    const workflow: Workflow = {
+      id: 'wf-1',
+      name: 'Label Mapping Workflow',
+      nodes: [
+        { id: 'n1', type: 'github.readIssues', config: {}, position: { x: 10, y: 20 } },
+      ],
+      edges: [
+        { id: 'e1', source: 'n1', target: 'n1', sourceHandle: 'true', targetHandle: 'in' },
+      ],
+      version: 1,
+      createdAt: '',
+      updatedAt: '',
+    };
+
+    const graph = toEditorGraph(workflow);
+    expect(graph.nodes).toHaveLength(1);
+    expect(graph.nodes[0].data.label).toBe('Read Issues');
+    expect(graph.nodes[0].data.nodeType).toBe('github.readIssues');
+    expect(graph.edges[0].sourceHandle).toBe('true');
+    expect(graph.edges[0].targetHandle).toBe('in');
   });
 });

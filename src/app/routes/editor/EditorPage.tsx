@@ -18,9 +18,10 @@ import { getAuthStatus } from '@/lib/api/github';
 import { useRouter } from '@/lib/router';
 import { editorFlowMachine } from './editor-flow-machine';
 import { editorDomainMachine } from './editor-domain-machine';
-import { parseImportedWorkflow, serializeWorkflowForExport } from './workflow-io';
+import { parseImportedWorkflow, serializeWorkflowForExport, toEditorGraph } from './workflow-io';
 import { WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
 import type { NodeType, Workflow, WorkflowPreflightIssue } from '@/types/workflow';
+import { getNodeLabel } from '@/features/workflow-editor/config-schemas';
 
 interface DragState {
   type: NodeType;
@@ -66,24 +67,7 @@ export function EditorPage() {
   useEffect(() => {
     if (urlWorkflowId) {
       if (fetchedWorkflow) {
-        const editorNodes = fetchedWorkflow.nodes.map((node) => ({
-          id: node.id,
-          type: 'workflowNode' as const,
-          position: node.position || { x: 0, y: 0 },
-          data: {
-            label: node.type,
-            nodeType: node.type as NodeType,
-            config: (node.config as Record<string, unknown>) || {},
-          },
-        }));
-
-        const editorEdges = fetchedWorkflow.edges.map((edge) => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          sourceHandle: edge.sourceHandle || undefined,
-          targetHandle: edge.targetHandle || undefined,
-        }));
+        const { nodes: editorNodes, edges: editorEdges } = toEditorGraph(fetchedWorkflow);
 
         suppressGraphDirtyRef.current = true;
         setGraph(editorNodes, editorEdges);
@@ -127,7 +111,7 @@ export function EditorPage() {
     const edgeCount = edges.filter(
       (e) => e.source === pendingDeleteNodeId || e.target === pendingDeleteNodeId,
     ).length;
-    return { label: node?.data.label ?? 'this node', edgeCount };
+    return { label: node ? getNodeLabel(node.data.nodeType) : 'this node', edgeCount };
   }, [pendingDeleteNodeId, nodes, edges]);
 
   const [dragState, setDragState] = useState<DragState | null>(null);
@@ -333,26 +317,7 @@ export function EditorPage() {
     try {
       const text = await file.text();
       const normalized = parseImportedWorkflow(text);
-      const editorNodes = normalized.nodes.map((node) => {
-        return {
-          id: node.id,
-          type: 'workflowNode' as const,
-          position: node.position ? { x: node.position.x, y: node.position.y } : { x: 0, y: 0 },
-          data: {
-            label: node.type,
-            nodeType: node.type,
-            config: node.config ?? {},
-          },
-        };
-      });
-
-      const editorEdges = normalized.edges.map((edge) => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        sourceHandle: edge.sourceHandle ?? undefined,
-        targetHandle: edge.targetHandle ?? undefined,
-      }));
+      const { nodes: editorNodes, edges: editorEdges } = toEditorGraph(normalized);
 
       suppressGraphDirtyRef.current = true;
       setGraph(editorNodes, editorEdges);

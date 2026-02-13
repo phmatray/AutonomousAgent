@@ -11,7 +11,7 @@ import {
   type Connection,
 } from '@xyflow/react';
 import type { NodeType } from '@/types/workflow';
-import { NODE_METADATA, NODE_SCHEMAS } from '@/features/workflow-editor/config-schemas';
+import { getNodeLabel, NODE_SCHEMAS } from '@/features/workflow-editor/config-schemas';
 import type { TemplateVariable } from '@/components/ui/form';
 
 interface NodeData extends Record<string, unknown> {
@@ -61,14 +61,6 @@ interface EditorState {
   getAvailableVariables: (nodeId: string) => TemplateVariable[];
   validateNodeConfig: (nodeId: string) => NodeValidationResult;
 }
-
-const NODE_LABELS: Record<NodeType, string> = Object.entries(NODE_METADATA).reduce(
-  (acc, [nodeType, meta]) => {
-    acc[nodeType as NodeType] = meta.label;
-    return acc;
-  },
-  {} as Record<NodeType, string>,
-);
 
 function isConnectionValid(connection: Connection, nodes: WorkflowNode[], edges: WorkflowEdge[]): boolean {
   if (connection.source === connection.target) return false;
@@ -141,7 +133,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       type: 'workflowNode',
       position,
       data: {
-        label: NODE_LABELS[type],
+        label: getNodeLabel(type),
         nodeType: type,
         config: defaultConfig,
       },
@@ -259,7 +251,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (!schema) continue;
       for (const output of schema.outputs) {
         variables.push({
-          label: `${node.data.label} - ${output.name}`,
+          label: `${getNodeLabel(node.data.nodeType)} - ${output.name}`,
           value: `${upId}.${output.name}`,
           description: output.description,
         });

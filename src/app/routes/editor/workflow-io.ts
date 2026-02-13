@@ -1,4 +1,5 @@
 import type { NodeType, Workflow } from '@/types/workflow';
+import { getNodeLabel } from '@/features/workflow-editor/config-schemas';
 
 export const WORKFLOW_EXPORT_SCHEMA_VERSION = 1;
 
@@ -32,6 +33,26 @@ export interface NormalizedImportedWorkflow {
   name: string;
   nodes: Workflow['nodes'];
   edges: Workflow['edges'];
+}
+
+export interface EditorGraphData {
+  nodes: Array<{
+    id: string;
+    type: 'workflowNode';
+    position: { x: number; y: number };
+    data: {
+      label: string;
+      nodeType: NodeType;
+      config: Record<string, unknown>;
+    };
+  }>;
+  edges: Array<{
+    id: string;
+    source: string;
+    target: string;
+    sourceHandle?: string;
+    targetHandle?: string;
+  }>;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -119,4 +140,27 @@ export function parseImportedWorkflow(
     nodes,
     edges,
   };
+}
+
+export function toEditorGraph(workflow: Pick<Workflow, 'nodes' | 'edges'>): EditorGraphData {
+  const nodes: EditorGraphData['nodes'] = workflow.nodes.map((node) => ({
+    id: node.id,
+    type: 'workflowNode',
+    position: node.position ? { x: node.position.x, y: node.position.y } : { x: 0, y: 0 },
+    data: {
+      label: getNodeLabel(node.type),
+      nodeType: node.type,
+      config: node.config ?? {},
+    },
+  }));
+
+  const edges: EditorGraphData['edges'] = workflow.edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle ?? undefined,
+    targetHandle: edge.targetHandle ?? undefined,
+  }));
+
+  return { nodes, edges };
 }

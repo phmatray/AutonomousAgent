@@ -67,7 +67,7 @@ describe('NodeConfigPanel', () => {
   it('renders when a node is selected', () => {
     setupStoreWithNode('trigger', { trigger_type: 'manual' }, 'My Trigger');
     render(<NodeConfigPanel />);
-    expect(screen.getByText('My Trigger')).toBeInTheDocument();
+    expect(screen.getByText('Trigger')).toBeInTheDocument();
   });
 
   it('renders the node type identifier', async () => {
@@ -174,7 +174,7 @@ describe('NodeConfigPanel', () => {
     setupStoreWithNode('trigger', {}, 'My Trigger');
     render(<NodeConfigPanel />);
     expect(
-      screen.getByRole('button', { name: 'Delete My Trigger node' }),
+      screen.getByRole('button', { name: 'Delete Trigger node' }),
     ).toBeInTheDocument();
   });
 
@@ -187,7 +187,7 @@ describe('NodeConfigPanel', () => {
     });
 
     render(<NodeConfigPanel />);
-    await user.click(screen.getByRole('button', { name: 'Delete My Trigger node' }));
+    await user.click(screen.getByRole('button', { name: 'Delete Trigger node' }));
 
     expect(requestDeleteNode).toHaveBeenCalledWith('test-node-1');
   });

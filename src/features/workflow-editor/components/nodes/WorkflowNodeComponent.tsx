@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import type { NodeType } from '@/types/workflow';
 import type { WorkflowNode } from '@/features/workflow-editor/stores/editor-store';
+import { getNodeLabel } from '@/features/workflow-editor/config-schemas';
 
 interface CategoryStyle {
   bg: string;
@@ -118,6 +119,7 @@ function WorkflowNodeComponent({ data, selected, dragging }: NodeProps<WorkflowN
   const execStyle = EXECUTION_STYLES[execStatus];
   const ExecIcon = execStyle.icon;
   const configSummary = getConfigSummary(data.config);
+  const nodeLabel = getNodeLabel(data.nodeType);
 
   const borderColor = execStatus !== 'idle' ? execStyle.borderClass : (selected ? style.selectedBorder : style.border);
   const statusLabel = execStatus !== 'idle' ? `, status: ${execStatus}` : '';
@@ -147,7 +149,7 @@ function WorkflowNodeComponent({ data, selected, dragging }: NodeProps<WorkflowN
         ${execStyle.cssAnimation}
       `}
       role="group"
-      aria-label={`${data.label} workflow node${statusLabel}`}
+      aria-label={`${nodeLabel} workflow node${statusLabel}`}
     >
       <Handle
         type="target"
@@ -168,7 +170,7 @@ function WorkflowNodeComponent({ data, selected, dragging }: NodeProps<WorkflowN
               {category}
             </span>
             <span className="text-sm font-medium text-text-primary truncate">
-              {data.label}
+              {nodeLabel}
             </span>
           </div>
           {execStatus !== 'idle' && (

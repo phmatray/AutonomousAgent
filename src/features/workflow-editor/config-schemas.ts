@@ -145,3 +145,7 @@ export function getRequiredFields(nodeType: NodeType): FieldSchema[] {
 export function getNodeOutputs(nodeType: NodeType): OutputVariable[] {
   return NODE_SCHEMAS[nodeType].outputs;
 }
+
+export function getNodeLabel(nodeType: NodeType): string {
+  return NODE_METADATA[nodeType]?.label ?? nodeType;
+}
