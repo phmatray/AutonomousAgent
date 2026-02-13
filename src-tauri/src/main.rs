@@ -10,12 +10,11 @@ mod services;
 mod test_utils;
 
 use services::AppState;
+use std::sync::mpsc;
 use std::sync::Arc;
 use tauri::Manager;
-use tokio::sync::Notify;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
@@ -28,25 +27,27 @@ async fn main() {
 
             // --- GitHub session restoration (blocking - must complete before app is ready) ---
             let init_state_gh = Arc::clone(&state.initialization);
-            let auth_ready = Arc::new(Notify::new());
-            let auth_ready_signal = Arc::clone(&auth_ready);
+            let (auth_tx, auth_rx) = mpsc::channel::<()>();
 
             if let Ok(token) = state.storage.get_github_token() {
                 let github = state.github.clone_for_restore();
+                let auth_tx_task = auth_tx.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Err(e) = github.authenticate(&token).await {
                         eprintln!("Failed to restore GitHub session: {}", e);
                     }
                     init_state_gh.write().await.github_auth_attempted = true;
-                    auth_ready_signal.notify_one();
+                    let _ = auth_tx_task.send(());
                 });
             } else {
                 // No token stored, mark as attempted and signal immediately
+                let auth_tx_task = auth_tx.clone();
                 tauri::async_runtime::spawn(async move {
                     init_state_gh.write().await.github_auth_attempted = true;
-                    auth_ready_signal.notify_one();
+                    let _ = auth_tx_task.send(());
                 });
             }
+            drop(auth_tx);
 
             // --- Database initialization (blocking - must complete before app is ready) ---
             let github_client = Arc::new(services::GitHubClient::new());
@@ -57,8 +58,7 @@ async fn main() {
             let init_state_db = Arc::clone(&state.initialization);
 
             // Use Notify to block setup() until DB initialization completes
-            let db_ready = Arc::new(Notify::new());
-            let db_ready_signal = Arc::clone(&db_ready);
+            let (db_tx, db_rx) = mpsc::channel::<()>();
 
             tauri::async_runtime::spawn(async move {
                 match db::init_database(&app_handle).await {
@@ -80,15 +80,14 @@ async fn main() {
                     }
                 }
                 // Signal that DB initialization attempt is done (success or failure)
-                db_ready_signal.notify_one();
+                let _ = db_tx.send(());
             });
 
             // Block setup until both DB and GitHub auth initialization complete.
             // Both run in parallel via spawned tasks, but setup() waits for both.
-            tauri::async_runtime::block_on(async {
-                tokio::join!(db_ready.notified(), auth_ready.notified());
-                println!("All initialization complete (database + auth)");
-            });
+            let _ = db_rx.recv();
+            let _ = auth_rx.recv();
+            println!("All initialization complete (database + auth)");
 
             Ok(())
         })
