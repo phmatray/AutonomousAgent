@@ -111,7 +111,7 @@ test.beforeEach(async ({ page }) => {
 test('shows dashboard empty state and navigates to editor', async ({ page }) => {
   await page.goto('/');
 
-  await expect(page.getByRole('heading', { name: 'Workflows' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Workflows', exact: true })).toBeVisible();
   await expect(page.getByText('No workflows yet')).toBeVisible();
 
   await page.getByRole('button', { name: 'Create Workflow' }).click();
@@ -134,7 +134,7 @@ test('saves a workflow from editor and calls create_workflow', async ({ page }) 
   const createCalls = await page.evaluate(() => {
     const state = (window as Window & {
       __E2E_STATE__?: {
-        invokeLog: Array<{ cmd: string; args: { workflow?: { name?: string } }>;
+        invokeLog: Array<{ cmd: string; args: { workflow?: { name?: string } } }>;
       };
     }).__E2E_STATE__;
 
@@ -171,5 +171,5 @@ test('navigates through top-level routes', async ({ page }) => {
 
   await page.getByRole('menuitem', { name: 'Dashboard' }).click();
   await expect(page).toHaveURL(/#\/dashboard/);
-  await expect(page.getByRole('heading', { name: 'Workflows' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Workflows', exact: true })).toBeVisible();
 });
