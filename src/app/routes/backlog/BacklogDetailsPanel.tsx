@@ -3,9 +3,22 @@ import type { BacklogItem } from '@/types/workflow';
 interface BacklogDetailsPanelProps {
   item: BacklogItem;
   onClose: () => void;
+  onCreateLinkedWorkflow: (backlogItemId: string) => void;
+  onOpenLinkedWorkflow: (workflowId: string) => void;
+  isCreatingLinkedWorkflow: boolean;
+  createLinkedWorkflowError?: string | null;
+  linkedWorkflowFeedback?: string | null;
 }
 
-export function BacklogDetailsPanel({ item, onClose }: BacklogDetailsPanelProps) {
+export function BacklogDetailsPanel({
+  item,
+  onClose,
+  onCreateLinkedWorkflow,
+  onOpenLinkedWorkflow,
+  isCreatingLinkedWorkflow,
+  createLinkedWorkflowError,
+  linkedWorkflowFeedback,
+}: BacklogDetailsPanelProps) {
   return (
     <aside
       className="w-full lg:w-96 lg:min-w-96 bg-gray-900 border border-gray-700 rounded-lg p-4 h-fit"
@@ -26,6 +39,33 @@ export function BacklogDetailsPanel({ item, onClose }: BacklogDetailsPanelProps)
         >
           Close
         </button>
+      </div>
+
+      <div className="mb-4 space-y-2">
+        {item.linked_workflow_id ? (
+          <button
+            type="button"
+            onClick={() => onOpenLinkedWorkflow(item.linked_workflow_id!)}
+            className="w-full px-3 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            Open Linked Workflow
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onCreateLinkedWorkflow(item.id)}
+            disabled={isCreatingLinkedWorkflow}
+            className="w-full px-3 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isCreatingLinkedWorkflow ? 'Creating Workflow...' : 'Create Linked Workflow'}
+          </button>
+        )}
+        {linkedWorkflowFeedback ? (
+          <p className="text-xs text-green-300" role="status">{linkedWorkflowFeedback}</p>
+        ) : null}
+        {createLinkedWorkflowError ? (
+          <p className="text-xs text-red-300" role="alert">{createLinkedWorkflowError}</p>
+        ) : null}
       </div>
 
       <dl className="space-y-3 text-sm">
@@ -53,6 +93,18 @@ export function BacklogDetailsPanel({ item, onClose }: BacklogDetailsPanelProps)
           <dt className="text-gray-400">Linked Workflow</dt>
           <dd className="text-gray-200 font-mono">
             {item.linked_workflow_id ?? 'Not linked'}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-gray-400">Resolution Guidelines (Markdown)</dt>
+          <dd className="text-gray-200">
+            {item.resolution_guidelines_md ? (
+              <pre className="mt-1 max-h-64 overflow-y-auto rounded border border-gray-700 bg-gray-950/70 p-3 text-xs whitespace-pre-wrap break-words">
+                {item.resolution_guidelines_md}
+              </pre>
+            ) : (
+              'Not generated yet'
+            )}
           </dd>
         </div>
         <div>

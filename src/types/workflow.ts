@@ -129,6 +129,7 @@ export interface BacklogItem {
   assignees: string[];
   html_url: string;
   linked_workflow_id?: string;
+  resolution_guidelines_md?: string;
   synced_at: string;
   created_at: string;
   updated_at: string;

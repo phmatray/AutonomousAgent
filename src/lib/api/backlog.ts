@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { BacklogItem } from '@/types/workflow';
+import type { BacklogItem, Workflow } from '@/types/workflow';
 
 export interface BacklogFilters {
   owner?: string;
@@ -33,6 +33,18 @@ export async function linkBacklogToWorkflow(
   workflowId: string,
 ): Promise<void> {
   return invoke('link_backlog_to_workflow', { backlogItemId, workflowId });
+}
+
+export interface CreateLinkedWorkflowResult {
+  workflow: Workflow;
+  backlogItem: BacklogItem;
+  usedFallbackGuidelines: boolean;
+}
+
+export async function createLinkedWorkflowFromBacklog(
+  backlogItemId: string,
+): Promise<CreateLinkedWorkflowResult> {
+  return invoke('create_linked_workflow_from_backlog', { backlogItemId });
 }
 
 export async function deleteBacklogItem(id: string): Promise<void> {

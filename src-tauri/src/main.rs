@@ -139,6 +139,7 @@ fn main() {
             commands::backlog::list_backlog_items,
             commands::backlog::sync_github_issues_to_backlog,
             commands::backlog::link_backlog_to_workflow,
+            commands::backlog::create_linked_workflow_from_backlog,
             commands::backlog::delete_backlog_item,
             // System commands
             commands::system::is_initialized,

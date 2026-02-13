@@ -4,6 +4,7 @@ import {
   listBacklogItems,
   syncGithubIssuesToBacklog,
   linkBacklogToWorkflow,
+  createLinkedWorkflowFromBacklog,
   deleteBacklogItem,
 } from '@/lib/api/backlog';
 import type { BacklogItem } from '@/types/workflow';
@@ -126,6 +127,44 @@ describe('backlog API', () => {
 
       await expect(linkBacklogToWorkflow('bl-nonexistent', 'wf-1')).rejects.toThrow(
         'Backlog item not found',
+      );
+    });
+  });
+
+  describe('createLinkedWorkflowFromBacklog', () => {
+    it('calls invoke with backlogItemId and returns payload', async () => {
+      const resultPayload = {
+        workflow: {
+          id: 'wf-123',
+          name: 'Issue #42 Fix workflow engine bug',
+          nodes: [],
+          edges: [],
+          version: 1,
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+        backlogItem: {
+          ...mockBacklogItem,
+          linked_workflow_id: 'wf-123',
+          resolution_guidelines_md: '# Resolution Guidelines\n\n## Problem Summary',
+        },
+        usedFallbackGuidelines: false,
+      };
+      mockInvoke.mockResolvedValueOnce(resultPayload);
+
+      const result = await createLinkedWorkflowFromBacklog('bl-1');
+
+      expect(mockInvoke).toHaveBeenCalledWith('create_linked_workflow_from_backlog', {
+        backlogItemId: 'bl-1',
+      });
+      expect(result).toEqual(resultPayload);
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('Failed to generate guidelines'));
+
+      await expect(createLinkedWorkflowFromBacklog('bl-1')).rejects.toThrow(
+        'Failed to generate guidelines',
       );
     });
   });

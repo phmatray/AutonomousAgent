@@ -13,6 +13,7 @@ pub struct BacklogItem {
     pub assignees: Vec<String>,
     pub html_url: String,
     pub linked_workflow_id: Option<String>,
+    pub resolution_guidelines_md: Option<String>,
     pub synced_at: String,
     pub created_at: String,
     pub updated_at: String,

@@ -42,6 +42,7 @@ pub async fn init_database(app: &AppHandle) -> Result<SqlitePool> {
         .execute(&pool)
         .await?;
     ensure_workflow_status_column(&pool).await?;
+    ensure_backlog_guidelines_column(&pool).await?;
 
     // Create indexes for performance
     sqlx::query(schema::CREATE_INDEXES).execute(&pool).await?;
@@ -63,6 +64,23 @@ async fn ensure_workflow_status_column(pool: &SqlitePool) -> Result<()> {
         .any(|row| row.get::<String, _>("name").eq_ignore_ascii_case("status"));
     if !has_status {
         sqlx::query("ALTER TABLE workflows ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'")
+            .execute(pool)
+            .await?;
+    }
+
+    Ok(())
+}
+
+async fn ensure_backlog_guidelines_column(pool: &SqlitePool) -> Result<()> {
+    let columns = sqlx::query("PRAGMA table_info(backlog_items)")
+        .fetch_all(pool)
+        .await?;
+    let has_guidelines = columns.iter().any(|row| {
+        row.get::<String, _>("name")
+            .eq_ignore_ascii_case("resolution_guidelines_md")
+    });
+    if !has_guidelines {
+        sqlx::query("ALTER TABLE backlog_items ADD COLUMN resolution_guidelines_md TEXT")
             .execute(pool)
             .await?;
     }

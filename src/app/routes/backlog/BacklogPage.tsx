@@ -5,6 +5,7 @@ import {
   listBacklogItems,
   syncGithubIssuesToBacklog,
   deleteBacklogItem,
+  createLinkedWorkflowFromBacklog,
 } from '@/lib/api/backlog';
 import type { BacklogItem } from '@/types/workflow';
 import { BacklogHeader } from './BacklogHeader';
@@ -24,6 +25,7 @@ export function BacklogPage() {
   const [stateFilter, setStateFilter] = useState('');
   const [labelFilter, setLabelFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [linkedWorkflowFeedback, setLinkedWorkflowFeedback] = useState<string | null>(null);
   const selectedItemId = params.get('item');
 
   const { data: repositories = [], isLoading: reposLoading } = useQuery<GitHubRepo[]>({
@@ -59,12 +61,28 @@ export function BacklogPage() {
     },
   });
 
+  const createWorkflowMutation = useMutation({
+    mutationFn: (backlogItemId: string) => createLinkedWorkflowFromBacklog(backlogItemId),
+    onMutate: () => {
+      setLinkedWorkflowFeedback(null);
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['backlog-items'] });
+      setLinkedWorkflowFeedback(
+        result.usedFallbackGuidelines
+          ? 'Workflow linked with template guidelines (Claude unavailable).'
+          : 'Workflow linked with AI-generated markdown guidelines.',
+      );
+    },
+  });
+
   const handleRepoSelect = (owner: string, repo: string) => {
     setSelectedOwner(owner);
     setSelectedRepo(repo);
     setStateFilter('');
     setLabelFilter('');
     setSearchQuery('');
+    setLinkedWorkflowFeedback(null);
   };
 
   const availableLabels = useMemo(() => {
@@ -90,11 +108,17 @@ export function BacklogPage() {
   }, [backlogLoading, navigate, selectedItem, selectedItemId]);
 
   const openDetails = (itemId: string) => {
+    setLinkedWorkflowFeedback(null);
     navigate('backlog', { item: itemId });
   };
 
   const closeDetails = () => {
+    setLinkedWorkflowFeedback(null);
     navigate('backlog');
+  };
+
+  const openWorkflow = (workflowId: string) => {
+    navigate('editor', { id: workflowId });
   };
 
   return (
@@ -149,7 +173,17 @@ export function BacklogPage() {
             />
           </div>
           {selectedItem && (
-            <BacklogDetailsPanel item={selectedItem} onClose={closeDetails} />
+            <BacklogDetailsPanel
+              item={selectedItem}
+              onClose={closeDetails}
+              onCreateLinkedWorkflow={(backlogItemId) => createWorkflowMutation.mutate(backlogItemId)}
+              onOpenLinkedWorkflow={openWorkflow}
+              isCreatingLinkedWorkflow={createWorkflowMutation.isPending}
+              createLinkedWorkflowError={
+                createWorkflowMutation.isError ? String(createWorkflowMutation.error) : null
+              }
+              linkedWorkflowFeedback={linkedWorkflowFeedback}
+            />
           )}
         </div>
       )}

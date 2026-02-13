@@ -30,7 +30,7 @@ impl BacklogService {
         let pool = self.get_pool().await?;
 
         let mut query = String::from(
-            "SELECT id, owner, repo, issue_number, title, body, state, labels, assignees, html_url, linked_workflow_id, synced_at, created_at, updated_at FROM backlog_items WHERE 1=1",
+            "SELECT id, owner, repo, issue_number, title, body, state, labels, assignees, html_url, linked_workflow_id, resolution_guidelines_md, synced_at, created_at, updated_at FROM backlog_items WHERE 1=1",
         );
         let mut binds: Vec<String> = Vec::new();
 
@@ -66,6 +66,18 @@ impl BacklogService {
 
         let rows = sqlx_query.fetch_all(&pool).await?;
         Ok(rows.into_iter().map(|r| r.into_backlog_item()).collect())
+    }
+
+    pub async fn get_backlog_item(&self, backlog_item_id: &str) -> Result<Option<BacklogItem>> {
+        let pool = self.get_pool().await?;
+        let row = sqlx::query_as::<_, BacklogItemRow>(
+            "SELECT id, owner, repo, issue_number, title, body, state, labels, assignees, html_url, linked_workflow_id, resolution_guidelines_md, synced_at, created_at, updated_at FROM backlog_items WHERE id = ?",
+        )
+        .bind(backlog_item_id)
+        .fetch_optional(&pool)
+        .await?;
+
+        Ok(row.map(|r| r.into_backlog_item()))
     }
 
     pub async fn sync_issues_to_backlog(
@@ -146,6 +158,39 @@ impl BacklogService {
         Ok(())
     }
 
+    pub async fn update_link_and_guidelines(
+        &self,
+        backlog_item_id: &str,
+        workflow_id: &str,
+        resolution_guidelines_md: &str,
+    ) -> Result<BacklogItem> {
+        let pool = self.get_pool().await?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let result = sqlx::query(
+            "UPDATE backlog_items SET linked_workflow_id = ?, resolution_guidelines_md = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(workflow_id)
+        .bind(resolution_guidelines_md)
+        .bind(&now)
+        .bind(backlog_item_id)
+        .execute(&pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::Validation(format!(
+                "Backlog item {} not found",
+                backlog_item_id
+            )));
+        }
+
+        self.get_backlog_item(backlog_item_id)
+            .await?
+            .ok_or_else(|| {
+                AppError::Validation(format!("Backlog item {} not found", backlog_item_id))
+            })
+    }
+
     pub async fn delete_backlog_item(&self, id: &str) -> Result<()> {
         let pool = self.get_pool().await?;
 
@@ -179,6 +224,7 @@ struct BacklogItemRow {
     assignees: String,
     html_url: String,
     linked_workflow_id: Option<String>,
+    resolution_guidelines_md: Option<String>,
     synced_at: String,
     created_at: String,
     updated_at: String,
@@ -201,6 +247,7 @@ impl BacklogItemRow {
             assignees,
             html_url: self.html_url,
             linked_workflow_id: self.linked_workflow_id,
+            resolution_guidelines_md: self.resolution_guidelines_md,
             synced_at: self.synced_at,
             created_at: self.created_at,
             updated_at: self.updated_at,

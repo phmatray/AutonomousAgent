@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS backlog_items (
     assignees TEXT NOT NULL DEFAULT '[]',
     html_url TEXT NOT NULL,
     linked_workflow_id TEXT,
+    resolution_guidelines_md TEXT,
     synced_at TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
