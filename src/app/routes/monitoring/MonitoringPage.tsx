@@ -25,13 +25,16 @@ const LOG_LEVEL_STYLES: Record<string, string> = {
 };
 
 const SIDEBAR_WIDTH_STORAGE_KEY = 'autonomous-agent.monitoring.sidebar-width';
+const LOG_DENSITY_STORAGE_KEY = 'autonomous-agent.monitoring.log-density';
 const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 480;
 const SIDEBAR_DEFAULT_WIDTH = 288;
 const MAX_DEBUG_BUNDLE_CREDENTIAL_EVENTS = 200;
+const LOG_DENSITY_MODES = ['compact', 'expanded'] as const;
 
 type DebugBundleExportMode = 'full' | 'credentialFiltered';
 type DebugBundleResultFilter = 'all' | 'success' | 'failure';
+type LogDensityMode = (typeof LOG_DENSITY_MODES)[number];
 
 function clampSidebarWidth(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
@@ -46,6 +49,13 @@ function loadSidebarWidth(): number {
   if (Number.isNaN(parsedValue)) return SIDEBAR_DEFAULT_WIDTH;
 
   return clampSidebarWidth(parsedValue);
+}
+
+function loadLogDensityMode(): LogDensityMode {
+  if (typeof window === 'undefined') return 'compact';
+  const rawValue = window.localStorage.getItem(LOG_DENSITY_STORAGE_KEY);
+  if (rawValue === 'expanded') return 'expanded';
+  return 'compact';
 }
 
 interface ExecutionContextEntry {
@@ -314,7 +324,17 @@ function ExecutionCard({
   );
 }
 
-function LogViewer({ logs, isStreaming }: { logs: ExecutionLog[]; isStreaming: boolean }) {
+function LogViewer({
+  logs,
+  isStreaming,
+  densityMode,
+  onDensityModeChange,
+}: {
+  logs: ExecutionLog[];
+  isStreaming: boolean;
+  densityMode: LogDensityMode;
+  onDensityModeChange: (mode: LogDensityMode) => void;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -326,13 +346,42 @@ function LogViewer({ logs, isStreaming }: { logs: ExecutionLog[]; isStreaming: b
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700">
-        <h3 className="text-sm font-medium text-white">Execution Logs</h3>
-        {isStreaming && (
-          <span className="flex items-center gap-1.5 text-xs text-green-400" aria-live="polite">
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" aria-hidden="true" />
-            Live
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          <h3 className="text-sm font-medium text-white">Execution Logs</h3>
+          <span className="text-xs text-gray-500">{logs.length} entries</span>
+          {isStreaming && (
+            <span className="flex items-center gap-1.5 text-xs text-green-400" aria-live="polite">
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" aria-hidden="true" />
+              Live
+            </span>
+          )}
+        </div>
+        <div className="inline-flex items-center rounded border border-gray-700 bg-gray-900/70 p-0.5">
+          <button
+            type="button"
+            onClick={() => onDensityModeChange('compact')}
+            className={`px-2 py-1 text-xs rounded transition-colors ${
+              densityMode === 'compact'
+                ? 'bg-indigo-700 text-indigo-100'
+                : 'text-gray-300 hover:bg-gray-800'
+            }`}
+            aria-pressed={densityMode === 'compact'}
+          >
+            Compact
+          </button>
+          <button
+            type="button"
+            onClick={() => onDensityModeChange('expanded')}
+            className={`px-2 py-1 text-xs rounded transition-colors ${
+              densityMode === 'expanded'
+                ? 'bg-indigo-700 text-indigo-100'
+                : 'text-gray-300 hover:bg-gray-800'
+            }`}
+            aria-pressed={densityMode === 'expanded'}
+          >
+            Expanded
+          </button>
+        </div>
       </div>
       <div
         ref={scrollRef}
@@ -347,19 +396,36 @@ function LogViewer({ logs, isStreaming }: { logs: ExecutionLog[]; isStreaming: b
           </p>
         )}
         {logs.map((log) => (
-          <div key={log.id} className="flex gap-3">
-            <span className="text-gray-600 flex-shrink-0">
-              {new Date(log.timestamp).toLocaleTimeString()}
-            </span>
-            <span className={`flex-shrink-0 w-12 ${LOG_LEVEL_STYLES[log.level]}`}>
-              {log.level}
-            </span>
-            {log.nodeId && (
-              <span className="text-purple-400 flex-shrink-0">
-                [{log.nodeId.slice(0, 8)}]
+          <div
+            key={log.id}
+            className={densityMode === 'expanded' ? 'rounded border border-gray-800 bg-gray-900/70 px-3 py-2 mb-1.5' : 'flex gap-3'}
+          >
+            <div className={densityMode === 'expanded' ? 'flex items-center gap-2 mb-1.5' : 'contents'}>
+              <span className="text-gray-600 flex-shrink-0">
+                {new Date(log.timestamp).toLocaleTimeString()}
               </span>
+              <span className={`flex-shrink-0 ${densityMode === 'expanded' ? 'px-1.5 py-0.5 rounded bg-gray-800 w-auto' : 'w-12'} ${LOG_LEVEL_STYLES[log.level]}`}>
+                {log.level}
+              </span>
+              {log.nodeId && (
+                <span className="text-purple-400 flex-shrink-0">
+                  [{log.nodeId.slice(0, 8)}]
+                </span>
+              )}
+            </div>
+            <p className={`text-gray-300 ${densityMode === 'expanded' ? 'whitespace-pre-wrap break-words' : 'break-all'}`}>
+              {log.message}
+            </p>
+            {densityMode === 'expanded' && log.metadata && Object.keys(log.metadata).length > 0 && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-[11px] text-gray-400 hover:text-gray-300">
+                  Metadata
+                </summary>
+                <pre className="mt-1 text-[11px] text-gray-300 whitespace-pre-wrap break-all">
+                  {JSON.stringify(log.metadata, null, 2)}
+                </pre>
+              </details>
             )}
-            <span className="text-gray-300 break-all">{log.message}</span>
           </div>
         ))}
       </div>
@@ -382,6 +448,7 @@ export function MonitoringPage() {
   const isLoadingExecutions = state.matches('loadingExecutions');
   const isFetchingExecutions = state.matches('refreshingExecutions');
   const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
+  const [logDensityMode, setLogDensityMode] = useState<LogDensityMode>(loadLogDensityMode);
   const [isResizing, setIsResizing] = useState(false);
 
   useEffect(() => {
@@ -479,6 +546,11 @@ export function MonitoringPage() {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(LOG_DENSITY_STORAGE_KEY, logDensityMode);
+  }, [logDensityMode]);
 
   useEffect(() => {
     if (!isResizing) return;
@@ -763,7 +835,12 @@ export function MonitoringPage() {
             )}
             <NodeOutputsPanel contextEntries={contextEntries} />
             <NodeRunInspector contextEntries={contextEntries} />
-            <LogViewer logs={allLogs} isStreaming={isStreaming} />
+            <LogViewer
+              logs={allLogs}
+              isStreaming={isStreaming}
+              densityMode={logDensityMode}
+              onDensityModeChange={setLogDensityMode}
+            />
           </>
         ) : (
           <div className="flex items-center justify-center h-full">
