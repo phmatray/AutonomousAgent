@@ -19,15 +19,18 @@ import { RepositorySelector } from './RepositorySelector';
 import { BacklogFilters } from './BacklogFilters';
 import { BacklogTable } from './BacklogTable';
 import { BacklogDetailsPanel } from './BacklogDetailsPanel';
+import { RecommendedIssuesPanel } from './RecommendedIssuesPanel';
+import { buildBacklogRecommendations } from './recommendations';
 import { useRouter } from '@/lib/router';
 import { CenteredPage } from '@/app/components/PageLayout';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Button } from '@/components/ui/primitives';
 
-type SavedView = 'all' | 'now' | 'next' | 'blocked' | 'unlinked';
+type SavedView = 'all' | 'recommended' | 'now' | 'next' | 'blocked' | 'unlinked';
 
 function matchesSavedView(item: BacklogItem, view: SavedView): boolean {
   if (view === 'all') return true;
+  if (view === 'recommended') return true;
   if (view === 'blocked') return item.triage_status === 'blocked';
   if (view === 'unlinked') return !item.linked_workflow_id;
   if (view === 'now') {
@@ -177,9 +180,19 @@ export function BacklogPage() {
     return Array.from(labelSet).sort();
   }, [backlogItems]);
 
+  const recommendedItems = useMemo(
+    () => buildBacklogRecommendations(backlogItems),
+    [backlogItems],
+  );
+
   const viewItems = useMemo(
-    () => backlogItems.filter((item) => matchesSavedView(item, savedView)),
-    [backlogItems, savedView],
+    () => {
+      if (savedView === 'recommended') {
+        return recommendedItems.map((entry) => entry.item);
+      }
+      return backlogItems.filter((item) => matchesSavedView(item, savedView));
+    },
+    [backlogItems, recommendedItems, savedView],
   );
 
   const selectedItem = useMemo(
@@ -279,6 +292,22 @@ export function BacklogPage() {
     navigate('editor', { id: workflowId });
   };
 
+  const startAutomationFromRecommendation = async (item: BacklogItem) => {
+    setLinkedWorkflowFeedback(null);
+    try {
+      if (item.linked_workflow_id) {
+        navigate('editor', { id: item.linked_workflow_id });
+        return;
+      }
+      const result = await createWorkflowMutation.mutateAsync(item.id);
+      navigate('editor', { id: result.workflow.id });
+    } catch (error) {
+      setLinkedWorkflowFeedback(
+        error instanceof Error ? error.message : 'Failed to start automation from recommendation.',
+      );
+    }
+  };
+
   const toggleSelectedId = (id: string) => {
     setSelectedIds((current) => current.includes(id)
       ? current.filter((value) => value !== id)
@@ -339,12 +368,13 @@ export function BacklogPage() {
   const savedViewCounts = useMemo(
     () => ({
       all: backlogItems.length,
+      recommended: recommendedItems.length,
       now: backlogItems.filter((item) => matchesSavedView(item, 'now')).length,
       next: backlogItems.filter((item) => matchesSavedView(item, 'next')).length,
       blocked: backlogItems.filter((item) => matchesSavedView(item, 'blocked')).length,
       unlinked: backlogItems.filter((item) => matchesSavedView(item, 'unlinked')).length,
     }),
-    [backlogItems],
+    [backlogItems, recommendedItems.length],
   );
 
   return (
@@ -370,6 +400,7 @@ export function BacklogPage() {
           <div className="mb-4 flex flex-wrap gap-2">
             {([
               ['all', 'All'],
+              ['recommended', 'Recommended'],
               ['now', 'Now'],
               ['next', 'Next'],
               ['blocked', 'Blocked'],
@@ -401,6 +432,13 @@ export function BacklogPage() {
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
             availableLabels={availableLabels}
+          />
+
+          <RecommendedIssuesPanel
+            recommendations={recommendedItems.slice(0, 5)}
+            onViewDetails={openDetails}
+            onStartAutomation={startAutomationFromRecommendation}
+            isStartingAutomation={createWorkflowMutation.isPending}
           />
 
           <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-gray-700 bg-gray-900/70 px-3 py-2">
