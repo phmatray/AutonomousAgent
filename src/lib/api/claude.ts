@@ -19,6 +19,11 @@ export interface ClaudeExecutionComplete {
   success: boolean;
 }
 
+export interface ClaudeCredentialStatus {
+  configured: boolean;
+  account_label?: string;
+}
+
 export async function executePlan(params: {
   prompt: string;
   workingDir?: string;
@@ -33,6 +38,20 @@ export async function cancelExecution(executionId: string): Promise<void> {
 
 export async function listRunningExecutions(): Promise<string[]> {
   return invoke('list_running_executions');
+}
+
+export async function getClaudeCredentialStatus(): Promise<ClaudeCredentialStatus> {
+  return invoke('get_claude_credential_status');
+}
+
+export async function saveClaudeCredential(params: {
+  apiKey: string;
+  accountLabel?: string;
+}): Promise<ClaudeCredentialStatus> {
+  return invoke('save_claude_credential', {
+    apiKey: params.apiKey,
+    accountLabel: params.accountLabel ?? null,
+  });
 }
 
 export function onClaudeStdout(

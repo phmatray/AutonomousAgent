@@ -24,41 +24,17 @@ fn main() {
             let app_handle = app.handle().clone();
 
             let state = app.state::<AppState>();
-
-            // --- GitHub session restoration (blocking - must complete before app is ready) ---
-            let init_state_gh = Arc::clone(&state.initialization);
-            let (auth_tx, auth_rx) = mpsc::channel::<()>();
-
-            if let Ok(token) = state.storage.get_github_token() {
-                let github = state.github.clone_for_restore();
-                let auth_tx_task = auth_tx.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) = github.authenticate(&token).await {
-                        eprintln!("Failed to restore GitHub session: {}", e);
-                    }
-                    init_state_gh.write().await.github_auth_attempted = true;
-                    let _ = auth_tx_task.send(());
-                });
-            } else {
-                // No token stored, mark as attempted and signal immediately
-                let auth_tx_task = auth_tx.clone();
-                tauri::async_runtime::spawn(async move {
-                    init_state_gh.write().await.github_auth_attempted = true;
-                    let _ = auth_tx_task.send(());
-                });
-            }
-            drop(auth_tx);
-
-            // --- Database initialization (blocking - must complete before app is ready) ---
             let github_client = Arc::clone(&state.github);
+            let github_restore = state.github.clone_for_restore();
             let git_service = Arc::clone(&state.git);
+            let storage_service = state.inner().storage.clone();
 
             let engine_db = state.inner().engine.db_pool_handle();
             let engine_svc = state.inner().engine.services_handle();
-            let init_state_db = Arc::clone(&state.initialization);
+            let init_state = Arc::clone(&state.initialization);
 
-            // Use Notify to block setup() until DB initialization completes
-            let (db_tx, db_rx) = mpsc::channel::<()>();
+            // Block setup() until database + credential restoration initialization completes.
+            let (init_tx, init_rx) = mpsc::channel::<()>();
 
             tauri::async_runtime::spawn(async move {
                 match db::init_database(&app_handle).await {
@@ -67,28 +43,36 @@ fn main() {
                         *engine_svc.write().await =
                             Some(services::workflow_engine::node_registry::ServiceProvider {
                                 github: github_client,
-                                storage: Arc::new(services::StorageService::new()),
+                                storage: Arc::new(storage_service.clone()),
                                 claude: Arc::new(
                                     services::workflow_engine::node_registry::ClaudeProvider::new(),
                                 ),
                                 git: git_service,
                                 backlog: Arc::new(services::BacklogService::new(engine_db.clone())),
                             });
-                        init_state_db.write().await.database = true;
+                        init_state.write().await.database = true;
                         println!("Workflow engine initialized successfully");
+
+                        if let Ok(api_key) = storage_service.get_claude_api_key().await {
+                            std::env::set_var("ANTHROPIC_API_KEY", api_key);
+                        }
+
+                        if let Ok(token) = storage_service.get_github_token().await {
+                            if let Err(e) = github_restore.authenticate(&token).await {
+                                eprintln!("Failed to restore GitHub session: {}", e);
+                            }
+                        }
                     }
                     Err(e) => {
                         eprintln!("Failed to initialize database: {}", e);
                     }
                 }
-                // Signal that DB initialization attempt is done (success or failure)
-                let _ = db_tx.send(());
+
+                init_state.write().await.github_auth_attempted = true;
+                let _ = init_tx.send(());
             });
 
-            // Block setup until both DB and GitHub auth initialization complete.
-            // Both run in parallel via spawned tasks, but setup() waits for both.
-            let _ = db_rx.recv();
-            let _ = auth_rx.recv();
+            let _ = init_rx.recv();
             println!("All initialization complete (database + auth)");
 
             let scheduler_engine = Arc::clone(&state.engine);
@@ -124,6 +108,8 @@ fn main() {
             commands::claude::execute_plan,
             commands::claude::cancel_execution,
             commands::claude::list_running_executions,
+            commands::claude::get_claude_credential_status,
+            commands::claude::save_claude_credential,
             // Git commands
             commands::git::git_status,
             commands::git::git_log,

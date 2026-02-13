@@ -430,7 +430,7 @@ async fn check_github_credentials(
             "PRE-AUTH-001",
             "Node requires active session credentials, but no active GitHub session is available.",
             Some(&node.id),
-            Some("Reconnect GitHub in Settings and retry preflight."),
+            Some("Reconnect GitHub in Credentials and retry preflight."),
         ));
         return;
     }
@@ -438,6 +438,7 @@ async fn check_github_credentials(
     if services
         .storage
         .get_github_token_for_credential_or_default(credential_id)
+        .await
         .is_ok()
     {
         return;
@@ -456,7 +457,7 @@ async fn check_github_credentials(
                 "PRE-AUTH-002",
                 "No usable GitHub credential found for this node.",
                 Some(&node.id),
-                Some("Set credential_id or configure a default GitHub token in Settings."),
+                Some("Set credential_id or configure a default GitHub token in Credentials."),
             )
         };
         issues.push(issue);

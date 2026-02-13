@@ -2,6 +2,7 @@ import type { Route } from '@/lib/router';
 import type { ComponentType } from 'react';
 import {
   Activity,
+  KeyRound,
   LayoutDashboard,
   ListTodo,
   Settings,
@@ -22,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { route: 'backlog', label: 'Backlog', icon: ListTodo },
   { route: 'dashboard', label: 'Workflows', icon: LayoutDashboard },
   { route: 'monitoring', label: 'Monitoring', icon: Activity },
+  { route: 'credentials', label: 'Credentials', icon: KeyRound },
   { route: 'settings', label: 'Settings', icon: Settings },
 ];
 

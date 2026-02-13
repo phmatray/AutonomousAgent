@@ -6,6 +6,7 @@ describe('router-machine helpers', () => {
   it('extracts a valid route from hash and falls back to dashboard', () => {
     expect(getRouteFromHash('#/editor')).toBe('editor');
     expect(getRouteFromHash('#/monitoring?tab=failed')).toBe('monitoring');
+    expect(getRouteFromHash('#/credentials')).toBe('credentials');
     expect(getRouteFromHash('#/unknown')).toBe('dashboard');
   });
 

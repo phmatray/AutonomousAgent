@@ -80,7 +80,7 @@ export function useGitHubCredentialOptions({
     if (credentialRecords.length === 0) {
       return [
         {
-          label: 'No saved credentials in Settings',
+          label: 'No saved credentials in Credentials',
           value: '',
           disabled: true,
         },

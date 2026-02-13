@@ -5,11 +5,18 @@ import {
   executePlan,
   cancelExecution,
   listRunningExecutions,
+  getClaudeCredentialStatus,
+  saveClaudeCredential,
   onClaudeStdout,
   onClaudeStderr,
   onClaudeComplete,
 } from '@/lib/api/claude';
-import type { ExecutionResult, ClaudeOutput, ClaudeExecutionComplete } from '@/lib/api/claude';
+import type {
+  ExecutionResult,
+  ClaudeOutput,
+  ClaudeExecutionComplete,
+  ClaudeCredentialStatus,
+} from '@/lib/api/claude';
 
 const mockExecResult: ExecutionResult = {
   id: 'claude-exec-1',
@@ -98,6 +105,40 @@ describe('execution API (claude)', () => {
       mockInvoke.mockRejectedValueOnce(new Error('Service unavailable'));
 
       await expect(listRunningExecutions()).rejects.toThrow('Service unavailable');
+    });
+  });
+
+  describe('Claude credentials', () => {
+    it('loads Claude credential status', async () => {
+      const status: ClaudeCredentialStatus = {
+        configured: true,
+        account_label: 'work-account',
+      };
+      mockInvoke.mockResolvedValueOnce(status);
+
+      const result = await getClaudeCredentialStatus();
+
+      expect(mockInvoke).toHaveBeenCalledWith('get_claude_credential_status');
+      expect(result).toEqual(status);
+    });
+
+    it('saves Claude credentials', async () => {
+      const status: ClaudeCredentialStatus = {
+        configured: true,
+        account_label: 'work-account',
+      };
+      mockInvoke.mockResolvedValueOnce(status);
+
+      const result = await saveClaudeCredential({
+        apiKey: 'sk-ant-123',
+        accountLabel: 'work-account',
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith('save_claude_credential', {
+        apiKey: 'sk-ant-123',
+        accountLabel: 'work-account',
+      });
+      expect(result).toEqual(status);
     });
   });
 

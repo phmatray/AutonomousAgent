@@ -40,14 +40,14 @@ export function useWorkflowExecution({
         if (!authStatus.authenticated) {
           flow.sendFlowEvent({
             type: 'EXECUTE_FAILURE',
-            message: 'GitHub is not authenticated. Open Settings and save a GitHub token first.',
+            message: 'GitHub is not authenticated. Open Credentials and save a GitHub token first.',
           });
           return;
         }
       } catch {
         flow.sendFlowEvent({
           type: 'EXECUTE_FAILURE',
-          message: 'Could not verify GitHub authentication. Open Settings and retry.',
+          message: 'Could not verify GitHub authentication. Open Credentials and retry.',
         });
         return;
       }

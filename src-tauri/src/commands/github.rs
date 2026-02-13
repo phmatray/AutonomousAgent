@@ -10,7 +10,7 @@ pub(crate) async fn ensure_github_authenticated(state: &AppState) -> Result<()> 
         return Ok(());
     }
 
-    let token = state.storage.get_github_token()?;
+    let token = state.storage.get_github_token().await?;
     state.github.authenticate(&token).await?;
     Ok(())
 }
@@ -63,8 +63,11 @@ pub async fn authenticate_github(token: String, state: State<'_, AppState>) -> R
     match state.github.authenticate(&token).await {
         Ok(user) => {
             // Persist as reusable credential profile and keep legacy token for compatibility.
-            state.storage.save_github_credential(&user.login, &token)?;
-            let _ = state.storage.set_github_token(&token);
+            state
+                .storage
+                .save_github_credential(&user.login, &token)
+                .await?;
+            let _ = state.storage.set_github_token(&token).await;
 
             Ok(AuthResult {
                 success: true,
@@ -80,7 +83,7 @@ pub async fn authenticate_github(token: String, state: State<'_, AppState>) -> R
 pub async fn list_github_credentials(
     state: State<'_, AppState>,
 ) -> Result<Vec<GitHubCredentialResponse>> {
-    let mut credentials = match state.storage.list_github_credentials() {
+    let mut credentials = match state.storage.list_github_credentials().await {
         Ok(credentials) => credentials,
         Err(err) => {
             eprintln!("Could not load stored credentials: {}", err);
@@ -91,9 +94,16 @@ pub async fn list_github_credentials(
     // Backfill credentials for users authenticated before multi-credential support.
     if credentials.is_empty() && ensure_github_authenticated(&state).await.is_ok() {
         if let Ok(user) = state.github.get_authenticated_user().await {
-            if let Ok(token) = state.storage.get_github_token() {
-                let _ = state.storage.save_github_credential(&user.login, &token);
-                credentials = state.storage.list_github_credentials().unwrap_or_default();
+            if let Ok(token) = state.storage.get_github_token().await {
+                let _ = state
+                    .storage
+                    .save_github_credential(&user.login, &token)
+                    .await;
+                credentials = state
+                    .storage
+                    .list_github_credentials()
+                    .await
+                    .unwrap_or_default();
             }
         }
     }

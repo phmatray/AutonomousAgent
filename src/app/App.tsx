@@ -5,6 +5,7 @@ import { DashboardPage } from '@/app/routes/dashboard/DashboardPage';
 import { BacklogPage } from '@/app/routes/backlog/BacklogPage';
 import { EditorPage } from '@/app/routes/editor/EditorPage';
 import { MonitoringPage } from '@/app/routes/monitoring/MonitoringPage';
+import { CredentialsPage } from '@/app/routes/credentials/CredentialsPage';
 import { SettingsPage } from '@/app/routes/settings/SettingsPage';
 import { WorkflowCatalogProvider } from '@/app/state/workflow-catalog-machine';
 import { useInitializationStatus } from '@/lib/hooks/useInitializationStatus';
@@ -63,6 +64,7 @@ function AppContent() {
         {route === 'backlog' && <BacklogPage />}
         {route === 'editor' && <EditorPage />}
         {route === 'monitoring' && <MonitoringPage />}
+        {route === 'credentials' && <CredentialsPage />}
         {route === 'settings' && <SettingsPage />}
       </main>
     </div>

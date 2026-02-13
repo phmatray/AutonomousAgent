@@ -39,13 +39,14 @@ async fn authenticate_for_config(
             return Ok(None);
         }
         return Err(AppError::Authentication(
-            "Selected session credential is unavailable; reconnect in Settings".to_string(),
+            "Selected session credential is unavailable; reconnect in Credentials".to_string(),
         ));
     }
 
     match services
         .storage
         .get_github_token_for_credential_or_default(credential_id)
+        .await
     {
         Ok(token) => {
             services.github.authenticate(&token).await?;

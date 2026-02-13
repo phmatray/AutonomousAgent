@@ -46,9 +46,10 @@ pub struct AppState {
 impl AppState {
     pub fn new() -> Self {
         let engine = Arc::new(WorkflowEngine::new());
+        let db_pool_handle = engine.db_pool_handle();
         let backlog = BacklogService::new(engine.db_pool_handle());
         Self {
-            storage: StorageService::new(),
+            storage: StorageService::with_db_pool_handle(db_pool_handle),
             github: Arc::new(GitHubClient::new()),
             claude: ClaudeExecutor::new(),
             git: Arc::new(GitService::new()),
