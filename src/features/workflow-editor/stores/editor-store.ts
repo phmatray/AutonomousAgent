@@ -11,15 +11,28 @@ import {
   type Connection,
 } from '@xyflow/react';
 import type { NodeType } from '@/types/workflow';
+import { NODE_SCHEMAS } from '@/features/workflow-editor/config-schemas';
+import type { TemplateVariable } from '@/components/ui/form';
 
 interface NodeData extends Record<string, unknown> {
   label: string;
   nodeType: NodeType;
   config: Record<string, unknown>;
+  executionStatus?: 'idle' | 'running' | 'completed' | 'error' | 'scheduled';
 }
 
 export type WorkflowNode = Node<NodeData>;
 export type WorkflowEdge = Edge;
+
+export interface FieldValidationError {
+  key: string;
+  message: string;
+}
+
+export interface NodeValidationResult {
+  valid: boolean;
+  errors: FieldValidationError[];
+}
 
 interface EditorState {
   nodes: WorkflowNode[];
@@ -39,6 +52,8 @@ interface EditorState {
   setWorkflow: (id: string, name: string, nodes: WorkflowNode[], edges: WorkflowEdge[]) => void;
   setWorkflowName: (name: string) => void;
   clearEditor: () => void;
+  getAvailableVariables: (nodeId: string) => TemplateVariable[];
+  validateNodeConfig: (nodeId: string) => NodeValidationResult;
 }
 
 const NODE_LABELS: Record<NodeType, string> = {
@@ -157,5 +172,67 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       workflowName: 'Untitled Workflow',
       isDirty: false,
     });
+  },
+
+  getAvailableVariables: (nodeId: string): TemplateVariable[] => {
+    const { nodes, edges } = get();
+    // Find all upstream nodes by traversing edges backwards
+    const upstream = new Set<string>();
+    const queue = [nodeId];
+    while (queue.length > 0) {
+      const current = queue.pop()!;
+      for (const edge of edges) {
+        if (edge.target === current && !upstream.has(edge.source)) {
+          upstream.add(edge.source);
+          queue.push(edge.source);
+        }
+      }
+    }
+
+    const variables: TemplateVariable[] = [];
+    for (const upId of upstream) {
+      const node = nodes.find((n) => n.id === upId);
+      if (!node) continue;
+      const schema = NODE_SCHEMAS[node.data.nodeType];
+      if (!schema) continue;
+      for (const output of schema.outputs) {
+        variables.push({
+          label: `${node.data.label} - ${output.name}`,
+          value: `${upId}.${output.name}`,
+          description: output.description,
+        });
+      }
+    }
+    return variables;
+  },
+
+  validateNodeConfig: (nodeId: string): NodeValidationResult => {
+    const { nodes } = get();
+    const node = nodes.find((n) => n.id === nodeId);
+    if (!node) return { valid: true, errors: [] };
+
+    const schema = NODE_SCHEMAS[node.data.nodeType];
+    if (!schema) return { valid: true, errors: [] };
+
+    const config = (node.data.config ?? {}) as Record<string, unknown>;
+    const errors: FieldValidationError[] = [];
+
+    for (const field of schema.fields) {
+      const value = config[field.key];
+      if (field.required) {
+        const strVal = typeof value === 'string' ? value.trim() : String(value ?? '');
+        if (!value || strVal === '' || strVal === 'undefined') {
+          errors.push({ key: field.key, message: `${field.label} is required` });
+        }
+      }
+      if (field.type === 'number' && value !== undefined && value !== '') {
+        const num = Number(value);
+        if (isNaN(num)) {
+          errors.push({ key: field.key, message: `${field.label} must be a number` });
+        }
+      }
+    }
+
+    return { valid: errors.length === 0, errors };
   },
 }));

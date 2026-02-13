@@ -1,29 +1,93 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { motion } from 'framer-motion';
+import type { LucideIcon } from 'lucide-react';
+import {
+  Zap,
+  GitFork,
+  Repeat,
+  Timer,
+  RefreshCw,
+  BookOpen,
+  GitPullRequest,
+  FolderTree,
+  GitBranch,
+  GitCommitHorizontal,
+  Search,
+  FileText,
+  Play,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Circle,
+} from 'lucide-react';
 import type { NodeType } from '@/types/workflow';
 import type { WorkflowNode } from '@/features/workflow-editor/stores/editor-store';
 
-const CATEGORY_STYLES: Record<string, { bg: string; border: string; icon: string }> = {
+interface CategoryStyle {
+  bg: string;
+  border: string;
+  selectedBorder: string;
+  iconBg: string;
+  headerColor: string;
+}
+
+const CATEGORY_STYLES: Record<string, CategoryStyle> = {
   github: {
-    bg: 'bg-gray-800',
-    border: 'border-gray-500',
-    icon: 'GH',
+    bg: 'bg-gradient-to-br from-github-bg to-bg-secondary',
+    border: 'border-github-border',
+    selectedBorder: 'border-github-accent',
+    iconBg: 'bg-github-muted text-github',
+    headerColor: 'text-github',
   },
   git: {
-    bg: 'bg-orange-900',
-    border: 'border-orange-500',
-    icon: 'Git',
+    bg: 'bg-gradient-to-br from-git-bg to-bg-secondary',
+    border: 'border-git-border',
+    selectedBorder: 'border-git-accent',
+    iconBg: 'bg-git-muted text-git',
+    headerColor: 'text-git',
   },
   claude: {
-    bg: 'bg-purple-900',
-    border: 'border-purple-500',
-    icon: 'AI',
+    bg: 'bg-gradient-to-br from-claude-bg to-bg-secondary',
+    border: 'border-claude-border',
+    selectedBorder: 'border-claude-accent',
+    iconBg: 'bg-claude-muted text-claude',
+    headerColor: 'text-claude',
   },
   control: {
-    bg: 'bg-blue-900',
-    border: 'border-blue-500',
-    icon: 'Ctrl',
+    bg: 'bg-gradient-to-br from-bg-tertiary to-bg-secondary',
+    border: 'border-border-primary',
+    selectedBorder: 'border-control',
+    iconBg: 'bg-control-muted text-control',
+    headerColor: 'text-control',
   },
+};
+
+const NODE_ICONS: Record<NodeType, LucideIcon> = {
+  trigger: Zap,
+  condition: GitFork,
+  loop: Repeat,
+  delay: Timer,
+  'github.sync': RefreshCw,
+  'github.readIssues': BookOpen,
+  'github.createPR': GitPullRequest,
+  'git.worktree': FolderTree,
+  'git.branch': GitBranch,
+  'git.commit': GitCommitHorizontal,
+  'claude.analyze': Search,
+  'claude.plan': FileText,
+  'claude.apply': Play,
+};
+
+type ExecutionStatus = 'idle' | 'running' | 'completed' | 'error' | 'scheduled';
+
+const EXECUTION_STYLES: Record<ExecutionStatus, { borderClass: string; cssAnimation: string; icon: LucideIcon; color: string; animate?: string }> = {
+  idle: { borderClass: '', cssAnimation: '', icon: Circle, color: 'text-state-idle' },
+  scheduled: { borderClass: 'border-state-scheduled', cssAnimation: 'node-state-scheduled', icon: Clock, color: 'text-state-scheduled' },
+  running: { borderClass: 'border-state-running', cssAnimation: 'node-state-running', icon: Loader2, color: 'text-state-running', animate: 'animate-spin' },
+  completed: { borderClass: 'border-state-success', cssAnimation: '', icon: CheckCircle2, color: 'text-state-success' },
+  error: { borderClass: 'border-state-error', cssAnimation: '', icon: XCircle, color: 'text-state-error' },
 };
 
 function getCategory(nodeType: NodeType): string {
@@ -33,55 +97,103 @@ function getCategory(nodeType: NodeType): string {
   return 'control';
 }
 
-function WorkflowNodeComponent({ data, selected }: NodeProps<WorkflowNode>) {
+function getConfigSummary(config: Record<string, unknown>): string | null {
+  const entries = Object.entries(config).filter(([, v]) => v !== '' && v !== null && v !== undefined);
+  if (entries.length === 0) return null;
+  const [key, value] = entries[0];
+  const str = typeof value === 'string' ? value : JSON.stringify(value);
+  const display = str.length > 30 ? str.slice(0, 30) + '...' : str;
+  const suffix = entries.length > 1 ? ` +${entries.length - 1} more` : '';
+  return `${key}: ${display}${suffix}`;
+}
+
+function WorkflowNodeComponent({ data, selected, dragging }: NodeProps<WorkflowNode>) {
+  const [hasAppeared, setHasAppeared] = useState(false);
   const category = getCategory(data.nodeType);
   const style = CATEGORY_STYLES[category];
+  const NodeIcon = NODE_ICONS[data.nodeType] ?? Circle;
+  const execStatus = (data.executionStatus ?? 'idle') as ExecutionStatus;
+  const execStyle = EXECUTION_STYLES[execStatus];
+  const ExecIcon = execStyle.icon;
+  const configSummary = getConfigSummary(data.config);
+
+  const borderColor = execStatus !== 'idle' ? execStyle.borderClass : (selected ? style.selectedBorder : style.border);
+  const statusLabel = execStatus !== 'idle' ? `, status: ${execStatus}` : '';
 
   return (
-    <div
+    <motion.div
+      initial={!hasAppeared ? { opacity: 0, scale: 0.8 } : false}
+      animate={{
+        opacity: 1,
+        scale: dragging ? 1.05 : 1,
+        boxShadow: dragging
+          ? '0 8px 30px rgba(99, 102, 241, 0.25)'
+          : selected
+            ? '0 4px 20px rgba(99, 102, 241, 0.3)'
+            : '0 4px 12px rgba(0, 0, 0, 0.4)',
+      }}
+      transition={{
+        type: 'spring',
+        stiffness: 400,
+        damping: 25,
+        opacity: { duration: 0.2 },
+      }}
+      onAnimationComplete={() => setHasAppeared(true)}
       className={`
-        rounded-lg border-2 ${style.border} ${style.bg}
-        min-w-[180px] shadow-lg transition-shadow
-        ${selected ? 'shadow-indigo-500/50 ring-2 ring-indigo-400' : ''}
+        rounded-lg border-2 ${borderColor} ${style.bg}
+        min-w-[200px] max-w-[260px]
+        ${execStyle.cssAnimation}
       `}
       role="group"
-      aria-label={`${data.label} workflow node`}
+      aria-label={`${data.label} workflow node${statusLabel}`}
     >
       <Handle
         type="target"
         position={Position.Top}
-        className="!w-3 !h-3 !bg-gray-400 !border-2 !border-gray-600"
+        className="!w-3 !h-3 !bg-border-primary !border-2 !border-bg-elevated hover:!bg-control hover:!border-control !transition-colors"
         aria-label="Input connection point"
       />
       <div className="px-4 py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <span
-            className={`
-              inline-flex items-center justify-center
-              w-8 h-8 rounded text-xs font-bold
-              bg-white/10 text-white/80
-            `}
+            className={`inline-flex items-center justify-center w-8 h-8 rounded-md ${style.iconBg}`}
             aria-hidden="true"
           >
-            {style.icon}
+            <NodeIcon size={16} strokeWidth={2} />
           </span>
-          <div className="flex flex-col">
-            <span className="text-xs text-white/50 uppercase tracking-wider">
+          <div className="flex flex-col min-w-0 flex-1">
+            <span className={`text-[10px] font-technical font-medium uppercase tracking-widest ${style.headerColor}`}>
               {category}
             </span>
-            <span className="text-sm font-medium text-white">
+            <span className="text-sm font-medium text-text-primary truncate">
               {data.label}
             </span>
           </div>
+          {execStatus !== 'idle' && (
+            <span className={`flex-shrink-0 ${execStyle.color}`} aria-label={`Status: ${execStatus}`}>
+              <ExecIcon size={14} className={execStyle.animate ?? ''} />
+            </span>
+          )}
+        </div>
+        <div className="mt-2 pt-2 border-t border-border-secondary">
+          {configSummary ? (
+            <p className="text-[11px] text-text-tertiary font-technical truncate">
+              {configSummary}
+            </p>
+          ) : (
+            <p className="text-[11px] text-text-tertiary italic">
+              Not configured
+            </p>
+          )}
         </div>
       </div>
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!w-3 !h-3 !bg-gray-400 !border-2 !border-gray-600"
+        className="!w-3 !h-3 !bg-border-primary !border-2 !border-bg-elevated hover:!bg-control hover:!border-control !transition-colors"
         aria-label="Output connection point"
       />
-    </div>
+    </motion.div>
   );
 }
 
