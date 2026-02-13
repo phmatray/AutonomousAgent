@@ -5,7 +5,7 @@ interface EditorFlowContext {
   error: string | null;
 }
 
-type EditorFlowEvent =
+export type EditorFlowEvent =
   | { type: 'SAVE_REQUEST' }
   | { type: 'SAVE_SUCCESS' }
   | { type: 'SAVE_FAILURE'; message: string }

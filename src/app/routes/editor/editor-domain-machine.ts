@@ -6,7 +6,7 @@ interface EditorDomainContext {
   isDirty: boolean;
 }
 
-type EditorDomainEvent =
+export type EditorDomainEvent =
   | { type: 'WORKFLOW_LOADED'; id: string; name: string }
   | { type: 'WORKFLOW_CREATED'; id: string; name: string }
   | { type: 'WORKFLOW_IMPORTED'; name: string }
