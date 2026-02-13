@@ -18,6 +18,7 @@ export function SettingsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['github-auth'] });
       setToken('');
+      setShowToken(false);
     },
   });
 

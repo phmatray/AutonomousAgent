@@ -196,3 +196,16 @@ test('updates editor URL with workflow id after first save', async ({ page }) =>
 
   await expect(page).toHaveURL(/#\/editor\?id=wf-created/);
 });
+
+test('rehides token input after successful authentication save', async ({ page }) => {
+  await page.goto('/#/settings');
+
+  const tokenInput = page.getByLabel('Personal Access Token');
+  await tokenInput.fill('ghp_example_token');
+  await page.getByRole('button', { name: 'Show token' }).click();
+  await expect(tokenInput).toHaveAttribute('type', 'text');
+
+  await page.getByRole('button', { name: 'Save Token' }).click();
+  await expect(page.getByText('Connected as e2e-user')).toBeVisible();
+  await expect(tokenInput).toHaveAttribute('type', 'password');
+});
