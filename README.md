@@ -147,6 +147,12 @@ Run all local quality gates (Rust fmt/clippy + TypeScript typecheck + frontend t
 npm run check
 ```
 
+Run full local verification (quality gates + WebDriver smoke):
+
+```bash
+npm run test:all
+```
+
 Run the Rust test suite:
 
 ```bash
