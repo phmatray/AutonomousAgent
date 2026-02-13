@@ -1,8 +1,13 @@
 import type { KeyboardEvent } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMachine } from '@xstate/react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { WorkflowExecution, ExecutionLog, ExecutionStatus } from '@/types/workflow';
+import type {
+  WorkflowExecution,
+  ExecutionLog,
+  ExecutionStatus,
+  RuntimeNodeEvent,
+} from '@/types/workflow';
 import { copyDebugBundle, type DebugBundleCredentialAuditFilter } from '@/lib/api/workflow';
 import { useRouter } from '@/lib/router';
 import { monitoringMachine } from './monitoring-machine';
@@ -75,6 +80,19 @@ interface ExecutionContextEntry {
   resolved_config?: Record<string, unknown> | null;
   input?: Record<string, unknown> | null;
   output?: Record<string, unknown> | null;
+  error?: string | null;
+}
+
+interface TimelineNodeState {
+  executionId: string;
+  workflowId: string;
+  nodeId: string;
+  nodeType: string;
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'SKIPPED';
+  startedAt: string;
+  completedAt?: string | null;
+  durationMs?: number | null;
+  retryCount?: number | null;
   error?: string | null;
 }
 
@@ -156,6 +174,39 @@ function getExecutionContextEntries(context: unknown): ExecutionContextEntry[] {
   return context.filter((entry): entry is ExecutionContextEntry =>
     typeof entry === 'object' && entry !== null,
   );
+}
+
+function toTimelineState(entry: ExecutionContextEntry): TimelineNodeState {
+  return {
+    executionId: '',
+    workflowId: '',
+    nodeId: entry.node_id ?? 'unknown',
+    nodeType: 'node',
+    status: (entry.status as TimelineNodeState['status']) ?? 'SKIPPED',
+    startedAt: entry.started_at ?? new Date().toISOString(),
+    completedAt: entry.completed_at ?? null,
+    durationMs: entry.duration_ms ?? null,
+    retryCount: entry.retry_count ?? null,
+    error: entry.error ?? null,
+  };
+}
+
+function upsertTimelineNode(
+  nodes: TimelineNodeState[],
+  incoming: TimelineNodeState,
+): TimelineNodeState[] {
+  const index = nodes.findIndex((node) => node.nodeId === incoming.nodeId);
+  if (index < 0) {
+    return [...nodes, incoming];
+  }
+
+  const next = [...nodes];
+  next[index] = {
+    ...next[index],
+    ...incoming,
+    startedAt: incoming.startedAt || next[index].startedAt,
+  };
+  return next;
 }
 
 function NodeOutputsPanel({ contextEntries }: { contextEntries: ExecutionContextEntry[] }) {
@@ -277,6 +328,48 @@ function NodeRunInspector({ contextEntries }: { contextEntries: ExecutionContext
                 )}
               </div>
             </details>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function NodeTimelinePanel({ nodes }: { nodes: TimelineNodeState[] }) {
+  if (nodes.length === 0) {
+    return (
+      <div className="px-4 py-3 border-b border-gray-800 bg-gray-900/80">
+        <p className="text-xs text-gray-500">No node activity yet.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 py-3 border-b border-gray-800 bg-gray-900/80">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-300 mb-3">Execution Timeline</h4>
+      <div className="space-y-2 max-h-60 overflow-y-auto">
+        {nodes.map((node) => {
+          const statusColor = node.status === 'COMPLETED'
+            ? 'text-green-300 border-green-800/70'
+            : node.status === 'FAILED'
+              ? 'text-red-300 border-red-800/70'
+              : node.status === 'SKIPPED'
+                ? 'text-yellow-300 border-yellow-800/70'
+                : 'text-blue-300 border-blue-800/70';
+          return (
+            <div key={node.nodeId} className={`rounded border bg-gray-900/60 px-3 py-2 ${statusColor}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-xs">{node.nodeId}</span>
+                <span className="text-[11px] font-semibold">{node.status}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between text-[11px] text-gray-400">
+                <span>{node.nodeType}</span>
+                <span>{node.durationMs ?? 0}ms</span>
+              </div>
+              {node.error && (
+                <p className="mt-1 text-[11px] text-red-300">{node.error}</p>
+              )}
+            </div>
           );
         })}
       </div>
@@ -450,6 +543,7 @@ export function MonitoringPage() {
   const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
   const [logDensityMode, setLogDensityMode] = useState<LogDensityMode>(loadLogDensityMode);
   const [isResizing, setIsResizing] = useState(false);
+  const [timelineNodes, setTimelineNodes] = useState<TimelineNodeState[]>([]);
 
   useEffect(() => {
     send({ type: 'REQUESTED_EXECUTION_CHANGED', executionId: requestedExecutionId });
@@ -469,10 +563,78 @@ export function MonitoringPage() {
     };
   }, [selectedExecutionId, send]);
 
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<Partial<WorkflowExecution> & { id: string }>('workflow:execution-status', (event) => {
+      send({ type: 'EXECUTION_STATUS_RECEIVED', execution: event.payload });
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [send]);
+
+  useEffect(() => {
+    const selectedId = selectedExecutionId;
+    let unlistenStarted: UnlistenFn | undefined;
+    let unlistenFinished: UnlistenFn | undefined;
+
+    const upsertFromEvent = (event: RuntimeNodeEvent) => {
+      if (!selectedId || event.executionId !== selectedId) return;
+      setTimelineNodes((current) => upsertTimelineNode(current, {
+        executionId: event.executionId,
+        workflowId: event.workflowId,
+        nodeId: event.nodeId,
+        nodeType: event.nodeType,
+        status: event.status,
+        startedAt: event.startedAt,
+        completedAt: event.completedAt ?? null,
+        durationMs: event.durationMs ?? null,
+        retryCount: event.retryCount ?? null,
+        error: event.error ?? null,
+      }));
+    };
+
+    listen<RuntimeNodeEvent>('workflow:node-started', (event) => {
+      upsertFromEvent(event.payload);
+    }).then((fn) => {
+      unlistenStarted = fn;
+    });
+
+    listen<RuntimeNodeEvent>('workflow:node-finished', (event) => {
+      upsertFromEvent(event.payload);
+    }).then((fn) => {
+      unlistenFinished = fn;
+    });
+
+    return () => {
+      unlistenStarted?.();
+      unlistenFinished?.();
+    };
+  }, [selectedExecutionId]);
+
   const allLogs = [...logs, ...streamingLogs];
   const selectedExecution = executions.find((e) => e.id === selectedExecutionId);
   const isStreaming = selectedExecution?.status === 'RUNNING';
-  const contextEntries = getExecutionContextEntries(selectedExecution?.context);
+  const contextEntries = useMemo(
+    () => getExecutionContextEntries(selectedExecution?.context),
+    [selectedExecution?.context],
+  );
+
+  useEffect(() => {
+    if (!selectedExecutionId) {
+      setTimelineNodes([]);
+      return;
+    }
+    const contextTimeline = contextEntries.map((entry) => ({
+      ...toTimelineState(entry),
+      executionId: selectedExecutionId,
+      workflowId: selectedExecution?.workflowId ?? '',
+    }));
+    setTimelineNodes(contextTimeline);
+  }, [contextEntries, selectedExecution?.workflowId, selectedExecutionId]);
 
   const handleCancel = () => send({ type: 'CANCEL_SELECTED' });
   const [copyState, setCopyState] = useState<{
@@ -596,7 +758,17 @@ export function MonitoringPage() {
         aria-label="Execution list"
       >
         <div className="p-4 border-b border-gray-700">
-          <h2 className="text-lg font-semibold text-white">Executions</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold text-white">Executions</h2>
+            <button
+              type="button"
+              onClick={() => send({ type: 'REFRESH_EXECUTIONS' })}
+              disabled={isFetchingExecutions}
+              className="px-2 py-1 text-xs rounded border border-gray-600 text-gray-200 hover:border-indigo-500 hover:text-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isFetchingExecutions ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
           <p className="text-xs text-gray-400 mt-1">
             Real-time workflow monitoring
           </p>
@@ -833,6 +1005,7 @@ export function MonitoringPage() {
                 )}
               </div>
             )}
+            <NodeTimelinePanel nodes={timelineNodes} />
             <NodeOutputsPanel contextEntries={contextEntries} />
             <NodeRunInspector contextEntries={contextEntries} />
             <LogViewer

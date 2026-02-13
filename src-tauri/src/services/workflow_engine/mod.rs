@@ -7,16 +7,18 @@ pub mod state_machine;
 
 use crate::errors::{AppError, Result};
 use crate::models::workflow::{Workflow, WorkflowExecution, WorkflowSchedule};
-use executor::{RetryPolicy, WorkflowExecutionResult};
+use executor::{RetryPolicy, RuntimeNodeEvent, WorkflowExecutionResult};
 use node_registry::{build_default_registry, ClaudeProvider, NodeRegistry, ServiceProvider};
 use preflight::WorkflowPreflightResult;
 use scheduler::{ScheduledWorkflow, Scheduler};
+use serde::Serialize;
 use serde_json::json;
 use state_machine::WorkflowState;
+use tauri::{AppHandle, Emitter};
 
 use sqlx::sqlite::SqlitePool;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -34,6 +36,18 @@ struct ExecutionLogInsert<'a> {
     timestamp: &'a str,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExecutionLogEvent {
+    id: i64,
+    execution_id: String,
+    node_id: Option<String>,
+    level: String,
+    message: String,
+    metadata: Option<serde_json::Value>,
+    timestamp: String,
+}
+
 /// The top-level workflow engine that orchestrates everything.
 pub struct WorkflowEngine {
     registry: Arc<NodeRegistry>,
@@ -43,6 +57,8 @@ pub struct WorkflowEngine {
     retry_policy: RetryPolicy,
     running_executions: Arc<RwLock<HashMap<String, RunningExecution>>>,
     scheduler_started: Arc<AtomicBool>,
+    app_handle: Arc<RwLock<Option<AppHandle>>>,
+    stream_log_sequence: Arc<AtomicI64>,
 }
 
 #[allow(dead_code)]
@@ -56,6 +72,8 @@ impl WorkflowEngine {
             retry_policy: RetryPolicy::default(),
             running_executions: Arc::new(RwLock::new(HashMap::new())),
             scheduler_started: Arc::new(AtomicBool::new(false)),
+            app_handle: Arc::new(RwLock::new(None)),
+            stream_log_sequence: Arc::new(AtomicI64::new(1)),
         }
     }
 
@@ -75,6 +93,10 @@ impl WorkflowEngine {
             git,
             backlog: Arc::new(crate::services::BacklogService::new(self.db_pool_handle())),
         });
+    }
+
+    pub async fn set_app_handle(&self, app_handle: AppHandle) {
+        *self.app_handle.write().await = Some(app_handle);
     }
 
     /// Check if the engine has been initialized with a database and services.
@@ -278,6 +300,93 @@ impl WorkflowEngine {
         Ok(())
     }
 
+    fn next_stream_log_id(&self) -> i64 {
+        -self.stream_log_sequence.fetch_add(1, Ordering::SeqCst)
+    }
+
+    async fn emit_app_event<T>(&self, event_name: &str, payload: T)
+    where
+        T: Serialize + Clone,
+    {
+        let app_handle = self.app_handle.read().await.clone();
+        if let Some(app) = app_handle {
+            let _ = app.emit(event_name, payload);
+        }
+    }
+
+    async fn emit_execution_status(&self, execution: &WorkflowExecution) {
+        self.emit_app_event("workflow:execution-status", execution.clone())
+            .await;
+    }
+
+    async fn emit_execution_log_event(&self, payload: ExecutionLogEvent) {
+        let event_name = format!("execution-log-{}", payload.execution_id);
+        self.emit_app_event(&event_name, payload).await;
+    }
+
+    async fn handle_runtime_node_event(&self, event: RuntimeNodeEvent) -> Result<()> {
+        let pool = self.get_pool().await?;
+        let current_node_id = if event.status == "RUNNING" {
+            Some(event.node_id.clone())
+        } else {
+            None
+        };
+
+        sqlx::query("UPDATE executions SET current_node_id = ? WHERE id = ?")
+            .bind(current_node_id.as_deref())
+            .bind(&event.execution_id)
+            .execute(&pool)
+            .await?;
+
+        let status_event = WorkflowExecution {
+            id: event.execution_id.clone(),
+            workflow_id: event.workflow_id.clone(),
+            status: WorkflowState::Running.as_str().to_string(),
+            trigger_type: None,
+            started_at: None,
+            completed_at: None,
+            error: None,
+            context: None,
+            current_node_id: current_node_id.clone(),
+        };
+        self.emit_execution_status(&status_event).await;
+
+        let event_name = if event.status == "RUNNING" {
+            "workflow:node-started"
+        } else {
+            "workflow:node-finished"
+        };
+        self.emit_app_event(event_name, event.clone()).await;
+
+        let message = if event.status == "RUNNING" {
+            format!("Node {} RUNNING", event.node_id)
+        } else if let Some(error) = event.error.as_deref() {
+            format!("Node {} {}: {}", event.node_id, event.status, error)
+        } else {
+            format!("Node {} {}", event.node_id, event.status)
+        };
+        self.emit_execution_log_event(ExecutionLogEvent {
+            id: self.next_stream_log_id(),
+            execution_id: event.execution_id,
+            node_id: Some(event.node_id),
+            level: if event.status == "FAILED" {
+                "ERROR".to_string()
+            } else {
+                "INFO".to_string()
+            },
+            message,
+            metadata: Some(json!({
+                "node_type": event.node_type,
+                "duration_ms": event.duration_ms,
+                "retry_count": event.retry_count,
+            })),
+            timestamp: event.completed_at.unwrap_or(event.started_at),
+        })
+        .await;
+
+        Ok(())
+    }
+
     // ----- Execution operations -----
 
     /// Run static/dynamic preflight checks for a workflow definition.
@@ -315,6 +424,7 @@ impl WorkflowEngine {
             self.registry.as_ref(),
             services,
             &self.retry_policy,
+            None,
         )
         .await;
 
@@ -368,6 +478,19 @@ impl WorkflowEngine {
         let engine = Arc::clone(self);
         let execution_id_for_task = execution_id.clone();
         tokio::spawn(async move {
+            let (runtime_event_tx, mut runtime_event_rx) = tokio::sync::mpsc::unbounded_channel();
+            let runtime_engine = Arc::clone(&engine);
+            let runtime_task = tokio::spawn(async move {
+                while let Some(runtime_event) = runtime_event_rx.recv().await {
+                    if let Err(error) = runtime_engine
+                        .handle_runtime_node_event(runtime_event)
+                        .await
+                    {
+                        log::error!("Failed to emit runtime node event: {}", error);
+                    }
+                }
+            });
+
             let result = executor::execute_workflow_cancellable(
                 &execution_id_for_task,
                 &workflow,
@@ -375,8 +498,10 @@ impl WorkflowEngine {
                 &services,
                 &engine.retry_policy,
                 cancellation_flag,
+                Some(runtime_event_tx),
             )
             .await;
+            let _ = runtime_task.await;
 
             if let Err(error) = engine.record_execution_complete(&result).await {
                 log::error!(
@@ -421,7 +546,7 @@ impl WorkflowEngine {
 
         let pool = self.get_pool().await?;
         let now = chrono::Utc::now().to_rfc3339();
-        Self::append_execution_log(
+        self.append_execution_log(
             &pool,
             ExecutionLogInsert {
                 execution_id,
@@ -482,7 +607,7 @@ impl WorkflowEngine {
         Ok(())
     }
 
-    async fn poll_due_cron_schedules(&self) -> Result<()> {
+    async fn poll_due_cron_schedules(self: &Arc<Self>) -> Result<()> {
         let pool = self.get_pool().await?;
         let due = self
             .scheduler
@@ -519,7 +644,7 @@ impl WorkflowEngine {
     }
 
     async fn start_workflow_execution_for_scheduler(
-        &self,
+        self: &Arc<Self>,
         schedule: &ScheduledWorkflow,
     ) -> Result<()> {
         let Some(workflow) = self.get_workflow(&schedule.workflow_id).await? else {
@@ -545,24 +670,34 @@ impl WorkflowEngine {
             },
         );
 
-        let registry = Arc::clone(&self.registry);
-        let retry_policy = self.retry_policy.clone();
-        let db_pool = self.db_pool_handle();
-        let running = Arc::clone(&self.running_executions);
+        let engine = Arc::clone(self);
         tokio::spawn(async move {
+            let (runtime_event_tx, mut runtime_event_rx) = tokio::sync::mpsc::unbounded_channel();
+            let runtime_engine = Arc::clone(&engine);
+            let runtime_task = tokio::spawn(async move {
+                while let Some(runtime_event) = runtime_event_rx.recv().await {
+                    if let Err(error) = runtime_engine
+                        .handle_runtime_node_event(runtime_event)
+                        .await
+                    {
+                        log::error!("Failed to emit runtime node event: {}", error);
+                    }
+                }
+            });
+
             let result = executor::execute_workflow_cancellable(
                 &execution_id,
                 &workflow,
-                registry.as_ref(),
+                engine.registry.as_ref(),
                 &services,
-                &retry_policy,
+                &engine.retry_policy,
                 cancellation_flag,
+                Some(runtime_event_tx),
             )
             .await;
+            let _ = runtime_task.await;
 
-            if let Err(error) =
-                WorkflowEngine::record_execution_complete_with_pool(&db_pool, &result).await
-            {
+            if let Err(error) = engine.record_execution_complete(&result).await {
                 log::error!(
                     "[Workflow:{}] [Execution:{}] Failed to persist completion: {}",
                     result.workflow_id,
@@ -571,7 +706,11 @@ impl WorkflowEngine {
                 );
             }
 
-            running.write().await.remove(&execution_id);
+            engine
+                .running_executions
+                .write()
+                .await
+                .remove(&execution_id);
         });
 
         Ok(())
@@ -598,7 +737,7 @@ impl WorkflowEngine {
         .execute(&pool)
         .await?;
 
-        Self::append_execution_log(
+        self.append_execution_log(
             &pool,
             ExecutionLogInsert {
                 execution_id,
@@ -611,30 +750,29 @@ impl WorkflowEngine {
         )
         .await?;
 
+        self.emit_execution_status(&WorkflowExecution {
+            id: execution_id.to_string(),
+            workflow_id: workflow_id.to_string(),
+            status: WorkflowState::Running.as_str().to_string(),
+            trigger_type: Some(trigger_type.to_string()),
+            started_at: Some(now.clone()),
+            completed_at: None,
+            error: None,
+            context: None,
+            current_node_id: None,
+        })
+        .await;
+
         Ok(now)
     }
 
     /// Record the completion of a workflow execution.
     async fn record_execution_complete(&self, result: &WorkflowExecutionResult) -> Result<()> {
-        Self::record_execution_complete_with_pool(&self.db_pool, result).await
-    }
-
-    async fn record_execution_complete_with_pool(
-        db_pool: &Arc<RwLock<Option<SqlitePool>>>,
-        result: &WorkflowExecutionResult,
-    ) -> Result<()> {
-        let pool = db_pool
-            .read()
-            .await
-            .clone()
-            .ok_or_else(|| AppError::Database {
-                code: crate::errors::types::ErrorCode::DatabaseNotInitialized.as_str(),
-                message: "Database not initialized".to_string(),
-            })?;
+        let pool = self.get_pool().await?;
         let context_json = serde_json::to_string(&result.node_results)?;
 
         sqlx::query(
-            "UPDATE executions SET status = ?, completed_at = ?, error = ?, context = ? WHERE id = ?",
+            "UPDATE executions SET status = ?, completed_at = ?, error = ?, context = ?, current_node_id = NULL WHERE id = ?",
         )
         .bind(&result.status)
         .bind(&result.completed_at)
@@ -653,7 +791,7 @@ impl WorkflowEngine {
             Some(error) => format!("Workflow execution {}: {}", result.status, error),
             None => format!("Workflow execution {}", result.status),
         };
-        Self::append_execution_log(
+        self.append_execution_log(
             &pool,
             ExecutionLogInsert {
                 execution_id: &result.execution_id,
@@ -708,7 +846,7 @@ impl WorkflowEngine {
                     node_result.node_id, node_result.status, node_result.retry_count
                 ),
             };
-            Self::append_execution_log(
+            self.append_execution_log(
                 &pool,
                 ExecutionLogInsert {
                     execution_id: &result.execution_id,
@@ -722,17 +860,34 @@ impl WorkflowEngine {
             .await?;
         }
 
+        self.emit_execution_status(&WorkflowExecution {
+            id: result.execution_id.clone(),
+            workflow_id: result.workflow_id.clone(),
+            status: result.status.clone(),
+            trigger_type: None,
+            started_at: Some(result.started_at.clone()),
+            completed_at: Some(result.completed_at.clone()),
+            error: result.error.clone(),
+            context: Some(serde_json::to_value(&result.node_results)?),
+            current_node_id: None,
+        })
+        .await;
+
         Ok(())
     }
 
-    async fn append_execution_log(pool: &SqlitePool, entry: ExecutionLogInsert<'_>) -> Result<()> {
+    async fn append_execution_log(
+        &self,
+        pool: &SqlitePool,
+        entry: ExecutionLogInsert<'_>,
+    ) -> Result<()> {
         let metadata_json = entry
             .metadata
             .as_ref()
             .map(serde_json::to_string)
             .transpose()?;
 
-        sqlx::query(
+        let result = sqlx::query(
             "INSERT INTO execution_logs (execution_id, node_id, level, message, metadata, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(entry.execution_id)
@@ -743,6 +898,17 @@ impl WorkflowEngine {
         .bind(entry.timestamp)
         .execute(pool)
         .await?;
+
+        self.emit_execution_log_event(ExecutionLogEvent {
+            id: result.last_insert_rowid(),
+            execution_id: entry.execution_id.to_string(),
+            node_id: entry.node_id.map(ToString::to_string),
+            level: entry.level.to_string(),
+            message: entry.message.to_string(),
+            metadata: entry.metadata,
+            timestamp: entry.timestamp.to_string(),
+        })
+        .await;
 
         Ok(())
     }

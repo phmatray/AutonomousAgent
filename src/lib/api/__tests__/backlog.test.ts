@@ -6,6 +6,8 @@ import {
   linkBacklogToWorkflow,
   createLinkedWorkflowFromBacklog,
   deleteBacklogItem,
+  updateBacklogItemTriage,
+  bulkUpdateBacklogTriage,
 } from '@/lib/api/backlog';
 import type { BacklogItem } from '@/types/workflow';
 
@@ -20,6 +22,11 @@ const mockBacklogItem: BacklogItem = {
   labels: ['bug'],
   assignees: ['testuser'],
   html_url: 'https://github.com/testuser/my-repo/issues/42',
+  triage_status: 'inbox',
+  priority: 'medium',
+  effort: 'medium',
+  impact: 'medium',
+  rank: 0,
   synced_at: '2026-01-01T00:00:00Z',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
@@ -37,11 +44,16 @@ describe('backlog API', () => {
       const result = await listBacklogItems();
 
       expect(mockInvoke).toHaveBeenCalledWith('list_backlog_items', {
-        owner: null,
-        repo: null,
-        stateFilter: null,
-        label: null,
-        search: null,
+        filters: {
+          owner: null,
+          repo: null,
+          stateFilter: null,
+          label: null,
+          search: null,
+          triageStatus: null,
+          priority: null,
+          linked: null,
+        },
       });
       expect(result).toEqual([mockBacklogItem]);
     });
@@ -55,14 +67,22 @@ describe('backlog API', () => {
         stateFilter: 'open',
         label: 'bug',
         search: 'workflow',
+        triageStatus: 'ready',
+        priority: 'high',
+        linked: false,
       });
 
       expect(mockInvoke).toHaveBeenCalledWith('list_backlog_items', {
-        owner: 'testuser',
-        repo: 'my-repo',
-        stateFilter: 'open',
-        label: 'bug',
-        search: 'workflow',
+        filters: {
+          owner: 'testuser',
+          repo: 'my-repo',
+          stateFilter: 'open',
+          label: 'bug',
+          search: 'workflow',
+          triageStatus: 'ready',
+          priority: 'high',
+          linked: false,
+        },
       });
       expect(result).toEqual([mockBacklogItem]);
     });
@@ -73,11 +93,16 @@ describe('backlog API', () => {
       await listBacklogItems({ owner: 'testuser' });
 
       expect(mockInvoke).toHaveBeenCalledWith('list_backlog_items', {
-        owner: 'testuser',
-        repo: null,
-        stateFilter: null,
-        label: null,
-        search: null,
+        filters: {
+          owner: 'testuser',
+          repo: null,
+          stateFilter: null,
+          label: null,
+          search: null,
+          triageStatus: null,
+          priority: null,
+          linked: null,
+        },
       });
     });
 
@@ -182,6 +207,51 @@ describe('backlog API', () => {
       mockInvoke.mockRejectedValueOnce(new Error('Item not found'));
 
       await expect(deleteBacklogItem('bl-nonexistent')).rejects.toThrow('Item not found');
+    });
+  });
+
+  describe('updateBacklogItemTriage', () => {
+    it('calls invoke with triage patch and returns updated item', async () => {
+      const updated = { ...mockBacklogItem, triage_status: 'ready', priority: 'high' } as BacklogItem;
+      mockInvoke.mockResolvedValueOnce(updated);
+
+      const result = await updateBacklogItemTriage('bl-1', {
+        triageStatus: 'ready',
+        priority: 'high',
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith('update_backlog_item_triage', {
+        backlogItemId: 'bl-1',
+        triageStatus: 'ready',
+        priority: 'high',
+        effort: null,
+        impact: null,
+        rank: null,
+      });
+      expect(result).toEqual(updated);
+    });
+  });
+
+  describe('bulkUpdateBacklogTriage', () => {
+    it('calls invoke with ids and patch', async () => {
+      mockInvoke.mockResolvedValueOnce(2);
+
+      const result = await bulkUpdateBacklogTriage(['bl-1', 'bl-2'], {
+        triageStatus: 'blocked',
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith('bulk_update_backlog_triage', {
+        request: {
+          ids: ['bl-1', 'bl-2'],
+          triageStatus: 'blocked',
+          priority: null,
+          effort: null,
+          impact: null,
+          rank: null,
+          archive: null,
+        },
+      });
+      expect(result).toBe(2);
     });
   });
 });

@@ -1,13 +1,19 @@
-import { useEffect, useState, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { listRepositories, type GitHubRepo } from '@/lib/api/github';
 import {
   listBacklogItems,
   syncGithubIssuesToBacklog,
   deleteBacklogItem,
   createLinkedWorkflowFromBacklog,
+  updateBacklogItemTriage,
+  bulkUpdateBacklogTriage,
 } from '@/lib/api/backlog';
-import type { BacklogItem } from '@/types/workflow';
+import type {
+  BacklogItem,
+  BacklogPriority,
+  BacklogTriageStatus,
+} from '@/types/workflow';
 import { BacklogHeader } from './BacklogHeader';
 import { RepositorySelector } from './RepositorySelector';
 import { BacklogFilters } from './BacklogFilters';
@@ -16,6 +22,23 @@ import { BacklogDetailsPanel } from './BacklogDetailsPanel';
 import { useRouter } from '@/lib/router';
 import { CenteredPage } from '@/app/components/PageLayout';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { Button } from '@/components/ui/primitives';
+
+type SavedView = 'all' | 'now' | 'next' | 'blocked' | 'unlinked';
+
+function matchesSavedView(item: BacklogItem, view: SavedView): boolean {
+  if (view === 'all') return true;
+  if (view === 'blocked') return item.triage_status === 'blocked';
+  if (view === 'unlinked') return !item.linked_workflow_id;
+  if (view === 'now') {
+    return (item.priority === 'critical' || item.priority === 'high')
+      && (item.triage_status === 'ready' || item.triage_status === 'in_progress');
+  }
+  if (view === 'next') {
+    return item.triage_status === 'ready' && item.priority === 'medium';
+  }
+  return true;
+}
 
 export function BacklogPage() {
   const { params, navigate } = useRouter();
@@ -23,9 +46,15 @@ export function BacklogPage() {
 
   const [selectedOwner, setSelectedOwner] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('');
+  const [savedView, setSavedView] = useState<SavedView>('all');
   const [stateFilter, setStateFilter] = useState('');
+  const [triageFilter, setTriageFilter] = useState<'' | BacklogTriageStatus>('');
+  const [priorityFilter, setPriorityFilter] = useState<'' | BacklogPriority>('');
   const [labelFilter, setLabelFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkTriageStatus, setBulkTriageStatus] = useState<'' | BacklogTriageStatus>('');
+  const [bulkPriority, setBulkPriority] = useState<'' | BacklogPriority>('');
   const [linkedWorkflowFeedback, setLinkedWorkflowFeedback] = useState<string | null>(null);
   const [pendingDeleteItemId, setPendingDeleteItemId] = useState<string | null>(null);
   const selectedItemId = params.get('item');
@@ -37,12 +66,23 @@ export function BacklogPage() {
   });
 
   const { data: backlogItems = [], isLoading: backlogLoading } = useQuery<BacklogItem[]>({
-    queryKey: ['backlog-items', selectedOwner, selectedRepo, stateFilter, labelFilter, searchQuery],
+    queryKey: [
+      'backlog-items',
+      selectedOwner,
+      selectedRepo,
+      stateFilter,
+      triageFilter,
+      priorityFilter,
+      labelFilter,
+      searchQuery,
+    ],
     queryFn: () =>
       listBacklogItems({
         owner: selectedOwner || undefined,
         repo: selectedRepo || undefined,
         stateFilter: stateFilter || undefined,
+        triageStatus: triageFilter || undefined,
+        priority: priorityFilter || undefined,
         label: labelFilter || undefined,
         search: searchQuery || undefined,
       }),
@@ -58,6 +98,42 @@ export function BacklogPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteBacklogItem(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['backlog-items'] });
+    },
+  });
+
+  const updateTriageMutation = useMutation({
+    mutationFn: ({
+      backlogItemId,
+      patch,
+    }: {
+      backlogItemId: string;
+      patch: {
+        triageStatus?: BacklogTriageStatus;
+        priority?: BacklogPriority;
+        rank?: number;
+        effort?: 'small' | 'medium' | 'large';
+        impact?: 'low' | 'medium' | 'high';
+      };
+    }) => updateBacklogItemTriage(backlogItemId, patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['backlog-items'] });
+    },
+  });
+
+  const bulkUpdateMutation = useMutation({
+    mutationFn: ({
+      ids,
+      patch,
+    }: {
+      ids: string[];
+      patch: {
+        triageStatus?: BacklogTriageStatus;
+        priority?: BacklogPriority;
+        archive?: boolean;
+      };
+    }) => bulkUpdateBacklogTriage(ids, patch),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['backlog-items'] });
     },
@@ -81,9 +157,13 @@ export function BacklogPage() {
   const handleRepoSelect = (owner: string, repo: string) => {
     setSelectedOwner(owner);
     setSelectedRepo(repo);
+    setSavedView('all');
     setStateFilter('');
+    setTriageFilter('');
+    setPriorityFilter('');
     setLabelFilter('');
     setSearchQuery('');
+    setSelectedIds([]);
     setLinkedWorkflowFeedback(null);
   };
 
@@ -97,9 +177,14 @@ export function BacklogPage() {
     return Array.from(labelSet).sort();
   }, [backlogItems]);
 
+  const viewItems = useMemo(
+    () => backlogItems.filter((item) => matchesSavedView(item, savedView)),
+    [backlogItems, savedView],
+  );
+
   const selectedItem = useMemo(
-    () => backlogItems.find((item) => item.id === selectedItemId) ?? null,
-    [backlogItems, selectedItemId],
+    () => viewItems.find((item) => item.id === selectedItemId) ?? null,
+    [viewItems, selectedItemId],
   );
 
   useEffect(() => {
@@ -108,6 +193,63 @@ export function BacklogPage() {
       navigate('backlog');
     }
   }, [backlogLoading, navigate, selectedItem, selectedItemId]);
+
+  useEffect(() => {
+    setSelectedIds((current) => current.filter((id) => viewItems.some((item) => item.id === id)));
+  }, [viewItems]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) {
+        return;
+      }
+
+      if (viewItems.length === 0) return;
+
+      const selectedIndex = selectedItemId
+        ? viewItems.findIndex((item) => item.id === selectedItemId)
+        : -1;
+
+      if (event.key === 'j') {
+        event.preventDefault();
+        const nextIndex = selectedIndex < 0
+          ? 0
+          : Math.min(viewItems.length - 1, selectedIndex + 1);
+        navigate('backlog', { item: viewItems[nextIndex].id });
+        return;
+      }
+
+      if (event.key === 'k') {
+        event.preventDefault();
+        const nextIndex = selectedIndex < 0
+          ? 0
+          : Math.max(0, selectedIndex - 1);
+        navigate('backlog', { item: viewItems[nextIndex].id });
+        return;
+      }
+
+      if (event.key === 'e' && selectedItemId) {
+        event.preventDefault();
+        navigate('backlog', { item: selectedItemId });
+        return;
+      }
+
+      if (event.key === 'l' && selectedItem) {
+        event.preventDefault();
+        if (selectedItem.linked_workflow_id) {
+          navigate('editor', { id: selectedItem.linked_workflow_id });
+        } else {
+          createWorkflowMutation.mutate(selectedItem.id);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [createWorkflowMutation, navigate, selectedItem, selectedItemId, viewItems]);
 
   const openDetails = (itemId: string) => {
     setLinkedWorkflowFeedback(null);
@@ -137,15 +279,79 @@ export function BacklogPage() {
     navigate('editor', { id: workflowId });
   };
 
+  const toggleSelectedId = (id: string) => {
+    setSelectedIds((current) => current.includes(id)
+      ? current.filter((value) => value !== id)
+      : [...current, id]);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === viewItems.length) {
+      setSelectedIds([]);
+      return;
+    }
+    setSelectedIds(viewItems.map((item) => item.id));
+  };
+
+  const applyBulkUpdate = () => {
+    if (selectedIds.length === 0) return;
+    if (!bulkTriageStatus && !bulkPriority) return;
+    bulkUpdateMutation.mutate({
+      ids: selectedIds,
+      patch: {
+        triageStatus: bulkTriageStatus || undefined,
+        priority: bulkPriority || undefined,
+      },
+    });
+  };
+
+  const archiveSelected = () => {
+    if (selectedIds.length === 0) return;
+    bulkUpdateMutation.mutate({
+      ids: selectedIds,
+      patch: {
+        archive: true,
+      },
+    });
+    setSelectedIds([]);
+  };
+
+  const linkSelected = async () => {
+    if (selectedIds.length === 0) return;
+    setLinkedWorkflowFeedback(null);
+    try {
+      for (const id of selectedIds) {
+        await createWorkflowMutation.mutateAsync(id);
+      }
+      setSelectedIds([]);
+    } catch (error) {
+      setLinkedWorkflowFeedback(
+        error instanceof Error ? error.message : 'Failed to auto-link selected items.',
+      );
+    }
+  };
+
   const pendingDeleteItem = useMemo(
-    () => backlogItems.find((item) => item.id === pendingDeleteItemId) ?? null,
-    [backlogItems, pendingDeleteItemId],
+    () => viewItems.find((item) => item.id === pendingDeleteItemId) ?? null,
+    [viewItems, pendingDeleteItemId],
+  );
+
+  const savedViewCounts = useMemo(
+    () => ({
+      all: backlogItems.length,
+      now: backlogItems.filter((item) => matchesSavedView(item, 'now')).length,
+      next: backlogItems.filter((item) => matchesSavedView(item, 'next')).length,
+      blocked: backlogItems.filter((item) => matchesSavedView(item, 'blocked')).length,
+      unlinked: backlogItems.filter((item) => matchesSavedView(item, 'unlinked')).length,
+    }),
+    [backlogItems],
   );
 
   return (
     <CenteredPage width="xl">
       <BacklogHeader
-        itemCount={backlogItems.length}
+        itemCount={viewItems.length}
+        selectedCount={selectedIds.length}
         isSyncing={syncMutation.isPending}
         onSync={() => syncMutation.mutate()}
         syncDisabled={!selectedOwner || !selectedRepo}
@@ -160,15 +366,93 @@ export function BacklogPage() {
       />
 
       {(selectedOwner && selectedRepo) && (
-        <BacklogFilters
-          stateFilter={stateFilter}
-          onStateFilterChange={setStateFilter}
-          labelFilter={labelFilter}
-          onLabelFilterChange={setLabelFilter}
-          searchQuery={searchQuery}
-          onSearchQueryChange={setSearchQuery}
-          availableLabels={availableLabels}
-        />
+        <>
+          <div className="mb-4 flex flex-wrap gap-2">
+            {([
+              ['all', 'All'],
+              ['now', 'Now'],
+              ['next', 'Next'],
+              ['blocked', 'Blocked'],
+              ['unlinked', 'Unlinked'],
+            ] as Array<[SavedView, string]>).map(([view, label]) => (
+              <button
+                key={view}
+                type="button"
+                onClick={() => setSavedView(view)}
+                className={`rounded border px-3 py-1.5 text-xs ${savedView === view
+                  ? 'border-indigo-500 bg-indigo-900/30 text-indigo-200'
+                  : 'border-gray-700 bg-gray-900 text-gray-300 hover:border-gray-600'
+                }`}
+              >
+                {label} ({savedViewCounts[view]})
+              </button>
+            ))}
+          </div>
+
+          <BacklogFilters
+            stateFilter={stateFilter}
+            onStateFilterChange={setStateFilter}
+            triageFilter={triageFilter}
+            onTriageFilterChange={setTriageFilter}
+            priorityFilter={priorityFilter}
+            onPriorityFilterChange={setPriorityFilter}
+            labelFilter={labelFilter}
+            onLabelFilterChange={setLabelFilter}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            availableLabels={availableLabels}
+          />
+
+          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-gray-700 bg-gray-900/70 px-3 py-2">
+            <span className="text-xs text-gray-400">Bulk actions ({selectedIds.length})</span>
+            <select
+              value={bulkTriageStatus}
+              onChange={(event) => setBulkTriageStatus(event.target.value as '' | BacklogTriageStatus)}
+              className="h-8 rounded border border-gray-700 bg-gray-800 px-2 text-xs text-white"
+            >
+              <option value="">Set triage...</option>
+              <option value="inbox">Inbox</option>
+              <option value="ready">Ready</option>
+              <option value="in_progress">In Progress</option>
+              <option value="blocked">Blocked</option>
+              <option value="done">Done</option>
+            </select>
+            <select
+              value={bulkPriority}
+              onChange={(event) => setBulkPriority(event.target.value as '' | BacklogPriority)}
+              className="h-8 rounded border border-gray-700 bg-gray-800 px-2 text-xs text-white"
+            >
+              <option value="">Set priority...</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+            <Button
+              onClick={applyBulkUpdate}
+              disabled={selectedIds.length === 0 || bulkUpdateMutation.isPending}
+              variant="secondary"
+            >
+              Apply
+            </Button>
+            <Button
+              onClick={linkSelected}
+              disabled={selectedIds.length === 0 || createWorkflowMutation.isPending}
+              variant="secondary"
+            >
+              Auto-link Workflows
+            </Button>
+            <Button
+              onClick={archiveSelected}
+              disabled={selectedIds.length === 0 || bulkUpdateMutation.isPending}
+              variant="secondary"
+              className="text-red-300 border-red-800/70"
+            >
+              Archive Selected
+            </Button>
+            <span className="text-xs text-gray-500 ml-auto">Shortcuts: j/k move, e open, l link</span>
+          </div>
+        </>
       )}
 
       {syncMutation.isError && (
@@ -186,11 +470,18 @@ export function BacklogPage() {
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex-1 min-w-0">
             <BacklogTable
-              items={backlogItems}
+              items={viewItems}
               selectedItemId={selectedItemId}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelectedId}
+              onToggleSelectAll={toggleSelectAll}
               onViewDetails={openDetails}
               onRequestDelete={requestDelete}
+              onUpdateTriage={(backlogItemId, patch) => {
+                updateTriageMutation.mutate({ backlogItemId, patch });
+              }}
               isDeleting={deleteMutation.isPending}
+              isUpdatingTriage={updateTriageMutation.isPending || bulkUpdateMutation.isPending}
             />
           </div>
           {selectedItem && (
@@ -199,7 +490,11 @@ export function BacklogPage() {
               onClose={closeDetails}
               onCreateLinkedWorkflow={(backlogItemId) => createWorkflowMutation.mutate(backlogItemId)}
               onOpenLinkedWorkflow={openWorkflow}
+              onUpdateTriage={(backlogItemId, patch) => {
+                updateTriageMutation.mutate({ backlogItemId, patch });
+              }}
               isCreatingLinkedWorkflow={createWorkflowMutation.isPending}
+              isUpdatingTriage={updateTriageMutation.isPending || bulkUpdateMutation.isPending}
               createLinkedWorkflowError={
                 createWorkflowMutation.isError ? String(createWorkflowMutation.error) : null
               }

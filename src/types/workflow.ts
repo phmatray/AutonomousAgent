@@ -27,6 +27,10 @@ export type ExecutionStatus =
   | 'CANCELLED';
 
 export type WorkflowLifecycleStatus = 'draft' | 'published';
+export type BacklogTriageStatus = 'inbox' | 'ready' | 'in_progress' | 'blocked' | 'done';
+export type BacklogPriority = 'low' | 'medium' | 'high' | 'critical';
+export type BacklogEffort = 'small' | 'medium' | 'large';
+export type BacklogImpact = 'low' | 'medium' | 'high';
 
 export interface WorkflowNode {
   id: string;
@@ -127,6 +131,19 @@ export interface ExecutionLog {
   timestamp: string;
 }
 
+export interface RuntimeNodeEvent {
+  executionId: string;
+  workflowId: string;
+  nodeId: string;
+  nodeType: string;
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'SKIPPED';
+  startedAt: string;
+  completedAt?: string | null;
+  durationMs?: number | null;
+  retryCount?: number | null;
+  error?: string | null;
+}
+
 export interface BacklogItem {
   id: string;
   owner: string;
@@ -140,6 +157,11 @@ export interface BacklogItem {
   html_url: string;
   linked_workflow_id?: string;
   resolution_guidelines_md?: string;
+  triage_status: BacklogTriageStatus;
+  priority: BacklogPriority;
+  effort: BacklogEffort;
+  impact: BacklogImpact;
+  rank: number;
   synced_at: string;
   created_at: string;
   updated_at: string;

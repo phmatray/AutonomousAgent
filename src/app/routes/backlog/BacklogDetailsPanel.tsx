@@ -1,4 +1,10 @@
-import type { BacklogItem } from '@/types/workflow';
+import type {
+  BacklogEffort,
+  BacklogImpact,
+  BacklogItem,
+  BacklogPriority,
+  BacklogTriageStatus,
+} from '@/types/workflow';
 import { Button } from '@/components/ui/primitives';
 
 interface BacklogDetailsPanelProps {
@@ -6,7 +12,18 @@ interface BacklogDetailsPanelProps {
   onClose: () => void;
   onCreateLinkedWorkflow: (backlogItemId: string) => void;
   onOpenLinkedWorkflow: (workflowId: string) => void;
+  onUpdateTriage: (
+    backlogItemId: string,
+    patch: {
+      triageStatus?: BacklogTriageStatus;
+      priority?: BacklogPriority;
+      effort?: BacklogEffort;
+      impact?: BacklogImpact;
+      rank?: number;
+    },
+  ) => void;
   isCreatingLinkedWorkflow: boolean;
+  isUpdatingTriage: boolean;
   createLinkedWorkflowError?: string | null;
   linkedWorkflowFeedback?: string | null;
 }
@@ -16,7 +33,9 @@ export function BacklogDetailsPanel({
   onClose,
   onCreateLinkedWorkflow,
   onOpenLinkedWorkflow,
+  onUpdateTriage,
   isCreatingLinkedWorkflow,
+  isUpdatingTriage,
   createLinkedWorkflowError,
   linkedWorkflowFeedback,
 }: BacklogDetailsPanelProps) {
@@ -65,6 +84,72 @@ export function BacklogDetailsPanel({
         {createLinkedWorkflowError ? (
           <p className="text-xs text-red-300" role="alert">{createLinkedWorkflowError}</p>
         ) : null}
+      </div>
+
+      <div className="mb-4 grid grid-cols-2 gap-2">
+        <label className="text-xs text-gray-300">
+          Triage
+          <select
+            disabled={isUpdatingTriage}
+            value={item.triage_status}
+            onChange={(event) => onUpdateTriage(item.id, {
+              triageStatus: event.target.value as BacklogTriageStatus,
+            })}
+            className="mt-1 h-8 w-full rounded border border-gray-700 bg-gray-800 px-2 text-xs text-white"
+          >
+            <option value="inbox">Inbox</option>
+            <option value="ready">Ready</option>
+            <option value="in_progress">In Progress</option>
+            <option value="blocked">Blocked</option>
+            <option value="done">Done</option>
+          </select>
+        </label>
+        <label className="text-xs text-gray-300">
+          Priority
+          <select
+            disabled={isUpdatingTriage}
+            value={item.priority}
+            onChange={(event) => onUpdateTriage(item.id, {
+              priority: event.target.value as BacklogPriority,
+            })}
+            className="mt-1 h-8 w-full rounded border border-gray-700 bg-gray-800 px-2 text-xs text-white"
+          >
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </label>
+        <label className="text-xs text-gray-300">
+          Effort
+          <select
+            disabled={isUpdatingTriage}
+            value={item.effort}
+            onChange={(event) => onUpdateTriage(item.id, {
+              effort: event.target.value as BacklogEffort,
+            })}
+            className="mt-1 h-8 w-full rounded border border-gray-700 bg-gray-800 px-2 text-xs text-white"
+          >
+            <option value="small">Small</option>
+            <option value="medium">Medium</option>
+            <option value="large">Large</option>
+          </select>
+        </label>
+        <label className="text-xs text-gray-300">
+          Impact
+          <select
+            disabled={isUpdatingTriage}
+            value={item.impact}
+            onChange={(event) => onUpdateTriage(item.id, {
+              impact: event.target.value as BacklogImpact,
+            })}
+            className="mt-1 h-8 w-full rounded border border-gray-700 bg-gray-800 px-2 text-xs text-white"
+          >
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </label>
       </div>
 
       <dl className="space-y-3 text-sm">

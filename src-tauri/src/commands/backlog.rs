@@ -1,5 +1,5 @@
 use crate::errors::{AppError, Result};
-use crate::models::backlog::{BacklogFilters, BacklogItem};
+use crate::models::backlog::{BacklogFilters, BacklogItem, BacklogTriageUpdate};
 use crate::models::workflow::{NodePosition, Workflow, WorkflowEdge, WorkflowNode};
 use crate::services::workflow_engine::node_registry::{ClaudeProvider, ClaudeRunner};
 use crate::services::AppState;
@@ -7,21 +7,34 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::State;
 
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ListBacklogItemsRequest {
+    pub owner: Option<String>,
+    pub repo: Option<String>,
+    pub state_filter: Option<String>,
+    pub label: Option<String>,
+    pub search: Option<String>,
+    pub triage_status: Option<String>,
+    pub priority: Option<String>,
+    pub linked: Option<bool>,
+}
+
 #[tauri::command]
 pub async fn list_backlog_items(
-    owner: Option<String>,
-    repo: Option<String>,
-    state_filter: Option<String>,
-    label: Option<String>,
-    search: Option<String>,
+    filters: Option<ListBacklogItemsRequest>,
     state: State<'_, AppState>,
 ) -> Result<Vec<BacklogItem>> {
+    let filters = filters.unwrap_or_default();
     let filters = BacklogFilters {
-        owner,
-        repo,
-        state: state_filter,
-        label,
-        search,
+        owner: filters.owner,
+        repo: filters.repo,
+        state: filters.state_filter,
+        label: filters.label,
+        search: filters.search,
+        triage_status: filters.triage_status,
+        priority: filters.priority,
+        linked: filters.linked,
     };
     state.backlog.list_backlog_items(&filters).await
 }
@@ -55,6 +68,63 @@ pub async fn link_backlog_to_workflow(
 #[tauri::command]
 pub async fn delete_backlog_item(id: String, state: State<'_, AppState>) -> Result<()> {
     state.backlog.delete_backlog_item(&id).await
+}
+
+#[tauri::command]
+pub async fn update_backlog_item_triage(
+    backlog_item_id: String,
+    triage_status: Option<String>,
+    priority: Option<String>,
+    effort: Option<String>,
+    impact: Option<String>,
+    rank: Option<i64>,
+    state: State<'_, AppState>,
+) -> Result<BacklogItem> {
+    let update = BacklogTriageUpdate {
+        triage_status,
+        priority,
+        effort,
+        impact,
+        rank,
+    };
+    state
+        .backlog
+        .update_backlog_triage(&backlog_item_id, &update)
+        .await
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkBacklogTriageRequest {
+    pub ids: Vec<String>,
+    pub triage_status: Option<String>,
+    pub priority: Option<String>,
+    pub effort: Option<String>,
+    pub impact: Option<String>,
+    pub rank: Option<i64>,
+    pub archive: Option<bool>,
+}
+
+#[tauri::command]
+pub async fn bulk_update_backlog_triage(
+    request: BulkBacklogTriageRequest,
+    state: State<'_, AppState>,
+) -> Result<u64> {
+    if request.archive.unwrap_or(false) {
+        return state.backlog.delete_backlog_items(&request.ids).await;
+    }
+
+    let update = BacklogTriageUpdate {
+        triage_status: request.triage_status,
+        priority: request.priority,
+        effort: request.effort,
+        impact: request.impact,
+        rank: request.rank,
+    };
+    state
+        .backlog
+        .bulk_update_backlog_triage(&request.ids, &update)
+        .await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

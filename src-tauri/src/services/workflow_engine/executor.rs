@@ -9,6 +9,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tokio::sync::mpsc::UnboundedSender;
 
 /// Result of executing a single node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,6 +74,21 @@ pub struct WorkflowExecutionResult {
     pub node_results: Vec<NodeExecutionResult>,
     pub started_at: String,
     pub completed_at: String,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeNodeEvent {
+    pub execution_id: String,
+    pub workflow_id: String,
+    pub node_id: String,
+    pub node_type: String,
+    pub status: String,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub duration_ms: Option<u64>,
+    pub retry_count: Option<u32>,
     pub error: Option<String>,
 }
 
@@ -332,6 +348,15 @@ fn deactivate_outgoing_edges(node_id: &str, dag: &DagInfo, inactive_edges: &mut 
     }
 }
 
+fn emit_runtime_node_event(
+    sender: Option<&UnboundedSender<RuntimeNodeEvent>>,
+    event: RuntimeNodeEvent,
+) {
+    if let Some(tx) = sender {
+        let _ = tx.send(event);
+    }
+}
+
 /// Execute a workflow as a DAG, level by level.
 pub async fn execute_workflow(
     execution_id: &str,
@@ -339,6 +364,7 @@ pub async fn execute_workflow(
     registry: &NodeRegistry,
     services: &ServiceProvider,
     retry_policy: &RetryPolicy,
+    runtime_event_sender: Option<UnboundedSender<RuntimeNodeEvent>>,
 ) -> WorkflowExecutionResult {
     execute_workflow_inner(
         execution_id,
@@ -347,6 +373,7 @@ pub async fn execute_workflow(
         services,
         retry_policy,
         None,
+        runtime_event_sender,
     )
     .await
 }
@@ -359,6 +386,7 @@ pub async fn execute_workflow_cancellable(
     services: &ServiceProvider,
     retry_policy: &RetryPolicy,
     cancellation_flag: Arc<AtomicBool>,
+    runtime_event_sender: Option<UnboundedSender<RuntimeNodeEvent>>,
 ) -> WorkflowExecutionResult {
     execute_workflow_inner(
         execution_id,
@@ -367,6 +395,7 @@ pub async fn execute_workflow_cancellable(
         services,
         retry_policy,
         Some(cancellation_flag),
+        runtime_event_sender,
     )
     .await
 }
@@ -384,6 +413,7 @@ async fn execute_workflow_inner(
     services: &ServiceProvider,
     retry_policy: &RetryPolicy,
     cancellation_flag: Option<Arc<AtomicBool>>,
+    runtime_event_sender: Option<UnboundedSender<RuntimeNodeEvent>>,
 ) -> WorkflowExecutionResult {
     let workflow_start_time = std::time::Instant::now();
     let started_at = chrono::Utc::now().to_rfc3339();
@@ -536,6 +566,23 @@ async fn execute_workflow_inner(
                 Err(e) => {
                     failed = true;
                     workflow_error = Some(format!("Node {}: {}", node_id, e));
+                    let started_at = chrono::Utc::now().to_rfc3339();
+                    let completed_at = chrono::Utc::now().to_rfc3339();
+                    emit_runtime_node_event(
+                        runtime_event_sender.as_ref(),
+                        RuntimeNodeEvent {
+                            execution_id: execution_id.to_string(),
+                            workflow_id: workflow.id.clone(),
+                            node_id: node_id.clone(),
+                            node_type: node.node_type.clone(),
+                            status: NodeState::Failed.as_str().to_string(),
+                            started_at: started_at.clone(),
+                            completed_at: Some(completed_at.clone()),
+                            duration_ms: Some(0),
+                            retry_count: Some(0),
+                            error: workflow_error.clone(),
+                        },
+                    );
                     node_results.push(NodeExecutionResult {
                         node_id: node_id.clone(),
                         status: NodeState::Failed.as_str().to_string(),
@@ -543,8 +590,8 @@ async fn execute_workflow_inner(
                         input: None,
                         output: None,
                         error: workflow_error.clone(),
-                        started_at: chrono::Utc::now().to_rfc3339(),
-                        completed_at: chrono::Utc::now().to_rfc3339(),
+                        started_at,
+                        completed_at,
                         duration_ms: 0,
                         retry_count: 0,
                         policy: EffectiveNodeExecutionPolicy::default(),
@@ -568,6 +615,23 @@ async fn execute_workflow_inner(
                     workflow_error = Some(message.clone());
                 }
                 deactivate_outgoing_edges(node_id, &dag, &mut inactive_edges);
+                let started_at = chrono::Utc::now().to_rfc3339();
+                let completed_at = chrono::Utc::now().to_rfc3339();
+                emit_runtime_node_event(
+                    runtime_event_sender.as_ref(),
+                    RuntimeNodeEvent {
+                        execution_id: execution_id.to_string(),
+                        workflow_id: workflow.id.clone(),
+                        node_id: node_id.clone(),
+                        node_type: node.node_type.clone(),
+                        status: NodeState::Failed.as_str().to_string(),
+                        started_at: started_at.clone(),
+                        completed_at: Some(completed_at.clone()),
+                        duration_ms: Some(0),
+                        retry_count: Some(0),
+                        error: Some(message.clone()),
+                    },
+                );
                 node_results.push(NodeExecutionResult {
                     node_id: node_id.clone(),
                     status: NodeState::Failed.as_str().to_string(),
@@ -575,8 +639,8 @@ async fn execute_workflow_inner(
                     input: Some(config.clone()),
                     output: None,
                     error: Some(message),
-                    started_at: chrono::Utc::now().to_rfc3339(),
-                    completed_at: chrono::Utc::now().to_rfc3339(),
+                    started_at,
+                    completed_at,
                     duration_ms: 0,
                     retry_count: 0,
                     policy: policy.clone(),
@@ -602,6 +666,21 @@ async fn execute_workflow_inner(
                 execution_id,
                 node_id,
                 node.node_type
+            );
+            emit_runtime_node_event(
+                runtime_event_sender.as_ref(),
+                RuntimeNodeEvent {
+                    execution_id: execution_id.to_string(),
+                    workflow_id: workflow.id.clone(),
+                    node_id: node_id.clone(),
+                    node_type: node.node_type.clone(),
+                    status: NodeState::Running.as_str().to_string(),
+                    started_at: node_started.clone(),
+                    completed_at: None,
+                    duration_ms: None,
+                    retry_count: None,
+                    error: None,
+                },
             );
 
             for attempt in 0..=policy.max_retries {
@@ -715,12 +794,27 @@ async fn execute_workflow_inner(
                     input: Some(config.clone()),
                     output: Some(output),
                     error: None,
-                    started_at: node_started,
-                    completed_at: node_completed,
+                    started_at: node_started.clone(),
+                    completed_at: node_completed.clone(),
                     duration_ms,
                     retry_count,
                     policy: policy.clone(),
                 });
+                emit_runtime_node_event(
+                    runtime_event_sender.as_ref(),
+                    RuntimeNodeEvent {
+                        execution_id: execution_id.to_string(),
+                        workflow_id: workflow.id.clone(),
+                        node_id: node_id.clone(),
+                        node_type: node.node_type.clone(),
+                        status: NodeState::Completed.as_str().to_string(),
+                        started_at: node_started,
+                        completed_at: Some(node_completed),
+                        duration_ms: Some(duration_ms),
+                        retry_count: Some(retry_count),
+                        error: None,
+                    },
+                );
             } else {
                 if node_cancelled {
                     cancelled = true;
@@ -733,12 +827,27 @@ async fn execute_workflow_inner(
                         input: Some(config.clone()),
                         output: None,
                         error: Some("Execution cancelled".to_string()),
-                        started_at: node_started,
-                        completed_at: node_completed,
+                        started_at: node_started.clone(),
+                        completed_at: node_completed.clone(),
                         duration_ms,
                         retry_count,
                         policy: policy.clone(),
                     });
+                    emit_runtime_node_event(
+                        runtime_event_sender.as_ref(),
+                        RuntimeNodeEvent {
+                            execution_id: execution_id.to_string(),
+                            workflow_id: workflow.id.clone(),
+                            node_id: node_id.clone(),
+                            node_type: node.node_type.clone(),
+                            status: NodeState::Skipped.as_str().to_string(),
+                            started_at: node_started,
+                            completed_at: Some(node_completed),
+                            duration_ms: Some(duration_ms),
+                            retry_count: Some(retry_count),
+                            error: Some("Execution cancelled".to_string()),
+                        },
+                    );
                     continue;
                 }
 
@@ -759,13 +868,28 @@ async fn execute_workflow_inner(
                     resolved_config: resolved_config.clone(),
                     input: Some(config.clone()),
                     output: None,
-                    error: last_error,
-                    started_at: node_started,
-                    completed_at: node_completed,
+                    error: last_error.clone(),
+                    started_at: node_started.clone(),
+                    completed_at: node_completed.clone(),
                     duration_ms,
                     retry_count,
                     policy: policy.clone(),
                 });
+                emit_runtime_node_event(
+                    runtime_event_sender.as_ref(),
+                    RuntimeNodeEvent {
+                        execution_id: execution_id.to_string(),
+                        workflow_id: workflow.id.clone(),
+                        node_id: node_id.clone(),
+                        node_type: node.node_type.clone(),
+                        status: NodeState::Failed.as_str().to_string(),
+                        started_at: node_started,
+                        completed_at: Some(node_completed),
+                        duration_ms: Some(duration_ms),
+                        retry_count: Some(retry_count),
+                        error: last_error,
+                    },
+                );
                 if failed {
                     break;
                 }

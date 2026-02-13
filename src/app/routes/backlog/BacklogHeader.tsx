@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/primitives';
 
 interface BacklogHeaderProps {
   itemCount: number;
+  selectedCount: number;
   isSyncing: boolean;
   onSync: () => void;
   syncDisabled: boolean;
@@ -10,6 +11,7 @@ interface BacklogHeaderProps {
 
 export function BacklogHeader({
   itemCount,
+  selectedCount,
   isSyncing,
   onSync,
   syncDisabled,
@@ -17,7 +19,7 @@ export function BacklogHeader({
   return (
     <PageHeader
       title="Backlog"
-      description={`${itemCount} issue${itemCount !== 1 ? 's' : ''} synced from GitHub`}
+      description={`${itemCount} issue${itemCount !== 1 ? 's' : ''} in queue${selectedCount > 0 ? ` · ${selectedCount} selected` : ''}`}
       actions={(
         <Button
           onClick={onSync}

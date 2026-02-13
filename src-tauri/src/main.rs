@@ -31,12 +31,14 @@ fn main() {
 
             let engine_db = state.inner().engine.db_pool_handle();
             let engine_svc = state.inner().engine.services_handle();
+            let engine = Arc::clone(&state.engine);
             let init_state = Arc::clone(&state.initialization);
 
             // Block setup() until database + credential restoration initialization completes.
             let (init_tx, init_rx) = mpsc::channel::<()>();
 
             tauri::async_runtime::spawn(async move {
+                engine.set_app_handle(app_handle.clone()).await;
                 match db::init_database(&app_handle).await {
                     Ok(pool) => {
                         *engine_db.write().await = Some(pool);
@@ -132,6 +134,8 @@ fn main() {
             commands::backlog::link_backlog_to_workflow,
             commands::backlog::create_linked_workflow_from_backlog,
             commands::backlog::delete_backlog_item,
+            commands::backlog::update_backlog_item_triage,
+            commands::backlog::bulk_update_backlog_triage,
             // System commands
             commands::system::is_initialized,
         ])

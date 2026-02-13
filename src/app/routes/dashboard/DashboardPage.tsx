@@ -2,7 +2,8 @@ import { useRouter } from '@/lib/router';
 import { Clock3, PlayCircle, Trash2 } from 'lucide-react';
 import type { Workflow } from '@/types/workflow';
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { CenteredPage, PageHeader } from '@/app/components/PageLayout';
 import { useWorkflowCatalogActorRef, WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
@@ -496,6 +497,7 @@ function EmptyState({
 
 export function DashboardPage() {
   const { navigate } = useRouter();
+  const queryClient = useQueryClient();
   const actorRef = useWorkflowCatalogActorRef();
   const workflows = WorkflowCatalogContext.useSelector((state) => state.context.workflows) ?? [];
   const loadError = WorkflowCatalogContext.useSelector((state) => state.context.loadError);
@@ -517,12 +519,24 @@ export function DashboardPage() {
     queryFn: async () => (await listExecutions()) ?? [],
     enabled: !isLoading && !loadError,
     retry: false,
-    refetchInterval: 30_000,
   });
 
   useEffect(() => {
     actorRef.send({ type: 'REFRESH' });
   }, [actorRef]);
+
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen('workflow:execution-status', () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard-execution-health'] });
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [queryClient]);
 
   const navigateToEditor = (workflowId?: string) => {
     if (workflowId) {

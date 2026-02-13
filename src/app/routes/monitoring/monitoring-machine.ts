@@ -1,4 +1,4 @@
-import { assign, fromCallback, fromPromise, setup } from 'xstate';
+import { assign, fromPromise, setup } from 'xstate';
 import { cancelExecution, getExecutionLogs, listExecutions } from '@/lib/api/workflow';
 import type { ExecutionLog, WorkflowExecution } from '@/types/workflow';
 
@@ -13,13 +13,26 @@ interface MonitoringContext {
   cancelError: string | null;
 }
 
+type ExecutionPatch = Partial<WorkflowExecution> & Pick<WorkflowExecution, 'id'>;
+
 type MonitoringEvent =
   | { type: 'REQUESTED_EXECUTION_CHANGED'; executionId: string | null }
   | { type: 'RETRY_EXECUTIONS' }
   | { type: 'REFRESH_EXECUTIONS' }
   | { type: 'SELECT_EXECUTION'; executionId: string }
   | { type: 'STREAM_LOG_RECEIVED'; log: ExecutionLog }
+  | { type: 'EXECUTION_STATUS_RECEIVED'; execution: ExecutionPatch }
   | { type: 'CANCEL_SELECTED' };
+
+function executionTimestamp(execution: WorkflowExecution): number {
+  const candidate = execution.startedAt ?? execution.completedAt ?? '';
+  const value = new Date(candidate).getTime();
+  return Number.isFinite(value) ? value : 0;
+}
+
+function sortExecutions(executions: WorkflowExecution[]): WorkflowExecution[] {
+  return [...executions].sort((left, right) => executionTimestamp(right) - executionTimestamp(left));
+}
 
 function syncSelection(
   context: MonitoringContext,
@@ -45,6 +58,42 @@ function syncSelection(
   };
 }
 
+function upsertExecution(executions: WorkflowExecution[], patch: ExecutionPatch): WorkflowExecution[] {
+  let found = false;
+  const merged = executions.map((execution) => {
+    if (execution.id !== patch.id) return execution;
+    found = true;
+    return {
+      ...execution,
+      ...patch,
+      workflowId: patch.workflowId ?? execution.workflowId,
+      status: patch.status ?? execution.status,
+      triggerType: patch.triggerType ?? execution.triggerType,
+      startedAt: patch.startedAt ?? execution.startedAt,
+      completedAt: patch.completedAt ?? execution.completedAt,
+      error: patch.error ?? execution.error,
+      currentNodeId: patch.currentNodeId ?? execution.currentNodeId,
+      context: patch.context ?? execution.context,
+    };
+  });
+
+  if (!found) {
+    merged.push({
+      id: patch.id,
+      workflowId: patch.workflowId ?? 'unknown',
+      status: patch.status ?? 'RUNNING',
+      triggerType: patch.triggerType,
+      startedAt: patch.startedAt,
+      completedAt: patch.completedAt,
+      error: patch.error,
+      currentNodeId: patch.currentNodeId,
+      context: patch.context,
+    });
+  }
+
+  return sortExecutions(merged);
+}
+
 export const monitoringMachine = setup({
   types: {} as {
     context: MonitoringContext;
@@ -58,12 +107,6 @@ export const monitoringMachine = setup({
     cancelSelectedExecution: fromPromise(async ({ input }: { input: { executionId: string } }) => {
       await cancelExecution(input.executionId);
       return input.executionId;
-    }),
-    pollExecutions: fromCallback(({ sendBack }) => {
-      const timer = window.setInterval(() => {
-        sendBack({ type: 'REFRESH_EXECUTIONS' });
-      }, 3000);
-      return () => window.clearInterval(timer);
     }),
   },
 }).createMachine({
@@ -86,9 +129,18 @@ export const monitoringMachine = setup({
       }),
     },
     STREAM_LOG_RECEIVED: {
-      guard: ({ context }) => context.selectedExecutionId !== null,
+      guard: ({ context, event }) => context.selectedExecutionId === event.log.executionId,
       actions: assign({
         streamingLogs: ({ context, event }) => [...context.streamingLogs, event.log],
+      }),
+    },
+    EXECUTION_STATUS_RECEIVED: {
+      actions: assign(({ context, event }) => {
+        const executions = upsertExecution(context.executions, event.execution);
+        return {
+          executions,
+          ...syncSelection(context, executions),
+        };
       }),
     },
     SELECT_EXECUTION: {
@@ -108,11 +160,14 @@ export const monitoringMachine = setup({
         src: 'fetchExecutions',
         onDone: {
           target: 'ready',
-          actions: assign(({ context, event }) => ({
-            executions: event.output,
-            executionsError: null,
-            ...syncSelection(context, event.output),
-          })),
+          actions: assign(({ context, event }) => {
+            const executions = sortExecutions(event.output);
+            return {
+              executions,
+              executionsError: null,
+              ...syncSelection(context, executions),
+            };
+          }),
         },
         onError: {
           target: 'executionsError',
@@ -132,9 +187,6 @@ export const monitoringMachine = setup({
       },
     },
     ready: {
-      invoke: {
-        src: 'pollExecutions',
-      },
       on: {
         REFRESH_EXECUTIONS: {
           target: 'refreshingExecutions',
@@ -150,11 +202,14 @@ export const monitoringMachine = setup({
         src: 'fetchExecutions',
         onDone: {
           target: 'ready',
-          actions: assign(({ context, event }) => ({
-            executions: event.output,
-            executionsError: null,
-            ...syncSelection(context, event.output),
-          })),
+          actions: assign(({ context, event }) => {
+            const executions = sortExecutions(event.output);
+            return {
+              executions,
+              executionsError: null,
+              ...syncSelection(context, executions),
+            };
+          }),
         },
         onError: {
           target: 'ready',

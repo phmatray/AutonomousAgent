@@ -43,6 +43,7 @@ pub async fn init_database(app: &AppHandle) -> Result<SqlitePool> {
         .await?;
     ensure_workflow_status_column(&pool).await?;
     ensure_backlog_guidelines_column(&pool).await?;
+    ensure_backlog_triage_columns(&pool).await?;
 
     // Create indexes for performance
     sqlx::query(schema::CREATE_INDEXES).execute(&pool).await?;
@@ -81,6 +82,47 @@ async fn ensure_backlog_guidelines_column(pool: &SqlitePool) -> Result<()> {
     });
     if !has_guidelines {
         sqlx::query("ALTER TABLE backlog_items ADD COLUMN resolution_guidelines_md TEXT")
+            .execute(pool)
+            .await?;
+    }
+
+    Ok(())
+}
+
+async fn ensure_backlog_triage_columns(pool: &SqlitePool) -> Result<()> {
+    let columns = sqlx::query("PRAGMA table_info(backlog_items)")
+        .fetch_all(pool)
+        .await?;
+    let has_column = |name: &str| -> bool {
+        columns
+            .iter()
+            .any(|row| row.get::<String, _>("name").eq_ignore_ascii_case(name))
+    };
+
+    if !has_column("triage_status") {
+        sqlx::query(
+            "ALTER TABLE backlog_items ADD COLUMN triage_status TEXT NOT NULL DEFAULT 'inbox'",
+        )
+        .execute(pool)
+        .await?;
+    }
+    if !has_column("priority") {
+        sqlx::query("ALTER TABLE backlog_items ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'")
+            .execute(pool)
+            .await?;
+    }
+    if !has_column("effort") {
+        sqlx::query("ALTER TABLE backlog_items ADD COLUMN effort TEXT NOT NULL DEFAULT 'medium'")
+            .execute(pool)
+            .await?;
+    }
+    if !has_column("impact") {
+        sqlx::query("ALTER TABLE backlog_items ADD COLUMN impact TEXT NOT NULL DEFAULT 'medium'")
+            .execute(pool)
+            .await?;
+    }
+    if !has_column("rank") {
+        sqlx::query("ALTER TABLE backlog_items ADD COLUMN rank INTEGER NOT NULL DEFAULT 0")
             .execute(pool)
             .await?;
     }
