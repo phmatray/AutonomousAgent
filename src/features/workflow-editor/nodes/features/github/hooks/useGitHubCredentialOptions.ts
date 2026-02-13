@@ -29,10 +29,12 @@ export function useGitHubCredentialOptions({
   const [credentialRecords, setCredentialRecords] = useState<CredentialRecord[]>([]);
   const [credentialsLoading, setCredentialsLoading] = useState(false);
 
-  const isGithubNode = node?.data.nodeType.startsWith('github.') ?? false;
+  const usesGithubCredentials = node
+    ? (node.data.nodeType.startsWith('github.') || node.data.nodeType === 'backlog.syncIssues')
+    : false;
 
   useEffect(() => {
-    if (!isGithubNode) {
+    if (!usesGithubCredentials) {
       setCredentialRecords([]);
       setCredentialsLoading(false);
       return;
@@ -62,7 +64,7 @@ export function useGitHubCredentialOptions({
     return () => {
       cancelled = true;
     };
-  }, [isGithubNode]);
+  }, [usesGithubCredentials]);
 
   const credentialOptions = useMemo(() => {
     if (credentialsLoading) {
@@ -95,7 +97,7 @@ export function useGitHubCredentialOptions({
   }, [credentialRecords, credentialsLoading]);
 
   useEffect(() => {
-    if (!node || !isGithubNode) return;
+    if (!node || !usesGithubCredentials) return;
     if (!schema?.fields.some((field) => field.key === 'credential_id')) return;
     if (credentialsLoading) return;
     if (credentialRecords.length === 0) return;
@@ -112,7 +114,7 @@ export function useGitHubCredentialOptions({
       ...currentConfig,
       credential_id: defaultCredential.id,
     });
-  }, [credentialRecords, credentialsLoading, isGithubNode, node, schema, updateNodeConfig]);
+  }, [credentialRecords, credentialsLoading, usesGithubCredentials, node, schema, updateNodeConfig]);
 
   return {
     credentialsLoading,

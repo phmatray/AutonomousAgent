@@ -5,7 +5,7 @@ mod tests {
         ClaudeProvider, ExecutionContext, NodeExecutor, ServiceProvider,
     };
     use crate::services::workflow_engine::nodes::github::{
-        GithubCreatePrNode, GithubReadIssuesNode, GithubSyncNode,
+        BacklogSyncIssuesNode, GithubCreatePrNode, GithubReadIssuesNode, GithubSyncNode,
     };
     use crate::services::{GitHubClient, GitService, StorageService};
     use serde_json::json;
@@ -20,6 +20,9 @@ mod tests {
             storage: Arc::new(StorageService::new()),
             claude: Arc::new(ClaudeProvider::new()),
             git: Arc::new(GitService::new()),
+            backlog: Arc::new(crate::services::BacklogService::new(Arc::new(
+                tokio::sync::RwLock::new(None),
+            ))),
         }
     }
 
@@ -353,6 +356,138 @@ mod tests {
             result.is_err(),
             "Should fail on unresolved template reference"
         );
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("nonexistent")
+                || err_msg.contains("Template")
+                || err_msg.contains("resolution"),
+            "Error should indicate template resolution failure; got: {}",
+            err_msg
+        );
+    }
+
+    // =========================================================================
+    // BacklogSyncIssuesNode
+    // =========================================================================
+
+    // --- node_type ---
+
+    #[test]
+    fn test_backlog_sync_issues_node_type() {
+        let node = BacklogSyncIssuesNode;
+        assert_eq!(node.node_type(), "backlog.syncIssues");
+    }
+
+    // --- validate ---
+
+    #[test]
+    fn test_backlog_sync_issues_validate_success() {
+        let node = BacklogSyncIssuesNode;
+        let config = json!({
+            "owner": "test-owner",
+            "repo": "test-repo"
+        });
+        assert!(node.validate(&config).is_ok());
+    }
+
+    #[test]
+    fn test_backlog_sync_issues_validate_missing_owner() {
+        let node = BacklogSyncIssuesNode;
+        let config = json!({
+            "repo": "test-repo"
+        });
+        let err = node.validate(&config).unwrap_err();
+        match &err {
+            AppError::Validation(msg) => assert!(
+                msg.contains("owner"),
+                "Error should mention 'owner', got: {}",
+                msg
+            ),
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_backlog_sync_issues_validate_missing_repo() {
+        let node = BacklogSyncIssuesNode;
+        let config = json!({
+            "owner": "test-owner"
+        });
+        let err = node.validate(&config).unwrap_err();
+        match &err {
+            AppError::Validation(msg) => assert!(
+                msg.contains("repo"),
+                "Error should mention 'repo', got: {}",
+                msg
+            ),
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+    }
+
+    // --- execute ---
+
+    #[tokio::test]
+    async fn test_backlog_sync_issues_execute_unauthenticated_fails() {
+        let node = BacklogSyncIssuesNode;
+        let config = json!({
+            "owner": "test-owner",
+            "repo": "test-repo"
+        });
+        let context = test_context();
+        let services = test_services();
+
+        let result = node
+            .execute("backlog-sync-1", &config, &context, &services)
+            .await;
+        assert!(
+            result.is_err(),
+            "Should fail when GitHub client is not authenticated"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_backlog_sync_issues_execute_with_template_resolution() {
+        let node = BacklogSyncIssuesNode;
+        let config = json!({
+            "owner": "{{sync.owner}}",
+            "repo": "{{sync.repo}}"
+        });
+        let context = test_context();
+        context.set_node_output(
+            "sync".into(),
+            json!({
+                "owner": "resolved-owner",
+                "repo": "resolved-repo"
+            }),
+        );
+        let services = test_services();
+
+        let result = node
+            .execute("backlog-sync-1", &config, &context, &services)
+            .await;
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            !err_msg.contains("Template resolution"),
+            "Error should NOT be from template resolution; got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_backlog_sync_issues_execute_with_missing_template_ref() {
+        let node = BacklogSyncIssuesNode;
+        let config = json!({
+            "owner": "{{nonexistent.owner}}",
+            "repo": "test-repo"
+        });
+        let context = test_context();
+        let services = test_services();
+
+        let result = node
+            .execute("backlog-sync-1", &config, &context, &services)
+            .await;
+        assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
             err_msg.contains("nonexistent")

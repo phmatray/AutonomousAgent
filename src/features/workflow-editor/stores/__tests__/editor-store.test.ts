@@ -135,6 +135,7 @@ describe('Editor Store', () => {
 
     it('uses correct labels for all node types', () => {
       const expectedLabels: Record<NodeType, string> = {
+        'backlog.syncIssues': 'Sync Issues to Backlog',
         'github.sync': 'Sync Repository',
         'github.readIssues': 'Read Issues',
         'github.createPR': 'Create PR',

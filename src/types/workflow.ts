@@ -1,6 +1,7 @@
 // Workflow type definitions
 
 export type NodeType =
+  | 'backlog.syncIssues'
   | 'github.sync'
   | 'github.readIssues'
   | 'github.createPR'

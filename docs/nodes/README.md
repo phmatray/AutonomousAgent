@@ -21,6 +21,7 @@ Every node README follows the same structure:
 | `delay` | Control | [docs/nodes/delay/README.md](delay/README.md) |
 | `github.sync` | GitHub | [docs/nodes/github-sync/README.md](github-sync/README.md) |
 | `github.readIssues` | GitHub | [docs/nodes/github-read-issues/README.md](github-read-issues/README.md) |
+| `backlog.syncIssues` | GitHub | [docs/nodes/backlog-sync-issues/README.md](backlog-sync-issues/README.md) |
 | `github.createPR` | GitHub | [docs/nodes/github-create-pr/README.md](github-create-pr/README.md) |
 | `git.worktree` | Git | [docs/nodes/git-worktree/README.md](git-worktree/README.md) |
 | `git.branch` | Git | [docs/nodes/git-branch/README.md](git-branch/README.md) |

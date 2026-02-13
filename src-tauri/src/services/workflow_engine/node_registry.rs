@@ -232,6 +232,7 @@ pub struct ServiceProvider {
     pub storage: Arc<crate::services::StorageService>,
     pub claude: Arc<dyn ClaudeRunner>,
     pub git: Arc<crate::services::GitService>,
+    pub backlog: Arc<crate::services::BacklogService>,
 }
 
 /// Trait for running Claude prompts, enabling mock implementations in tests.
@@ -349,6 +350,7 @@ pub fn build_default_registry() -> NodeRegistry {
     registry.register(github::GithubSyncNode);
     registry.register(github::GithubReadIssuesNode);
     registry.register(github::GithubCreatePrNode);
+    registry.register(github::BacklogSyncIssuesNode);
 
     // Git nodes
     registry.register(git::GitWorktreeNode);
@@ -494,6 +496,7 @@ mod tests {
             "github.sync",
             "github.readIssues",
             "github.createPR",
+            "backlog.syncIssues",
             "git.worktree",
             "git.branch",
             "git.commit",

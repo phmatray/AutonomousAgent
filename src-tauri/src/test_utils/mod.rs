@@ -362,6 +362,9 @@ pub fn create_test_service_provider() -> ServiceProvider {
         storage: Arc::new(crate::services::StorageService::new()),
         claude: Arc::new(ClaudeProvider::new()),
         git: Arc::new(crate::services::GitService::new()),
+        backlog: Arc::new(crate::services::BacklogService::new(Arc::new(
+            tokio::sync::RwLock::new(None),
+        ))),
     }
 }
 
@@ -374,6 +377,9 @@ pub fn create_test_service_provider_with_mock_claude(
         storage: Arc::new(crate::services::StorageService::new()),
         claude: mock_claude,
         git: Arc::new(crate::services::GitService::new()),
+        backlog: Arc::new(crate::services::BacklogService::new(Arc::new(
+            tokio::sync::RwLock::new(None),
+        ))),
     }
 }
 

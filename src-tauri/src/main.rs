@@ -72,6 +72,7 @@ fn main() {
                                     services::workflow_engine::node_registry::ClaudeProvider::new(),
                                 ),
                                 git: git_service,
+                                backlog: Arc::new(services::BacklogService::new(engine_db.clone())),
                             });
                         init_state_db.write().await.database = true;
                         println!("Workflow engine initialized successfully");

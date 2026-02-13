@@ -62,6 +62,7 @@ impl WorkflowEngine {
             storage,
             claude: Arc::new(ClaudeProvider::new()),
             git,
+            backlog: Arc::new(crate::services::BacklogService::new(self.db_pool_handle())),
         });
     }
 

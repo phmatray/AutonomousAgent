@@ -23,6 +23,7 @@ export const NODE_ICONS: Record<NodeType, LucideIcon> = {
   delay: Timer,
   'github.sync': RefreshCw,
   'github.readIssues': BookOpen,
+  'backlog.syncIssues': RefreshCw,
   'github.createPR': GitPullRequest,
   'git.worktree': FolderTree,
   'git.branch': GitBranch,

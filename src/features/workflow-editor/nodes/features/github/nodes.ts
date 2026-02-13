@@ -3,5 +3,5 @@ import type { NodeFeatureDefinition } from '@/features/workflow-editor/nodes/fea
 export const GITHUB_NODE_FEATURE: NodeFeatureDefinition = {
   key: 'github',
   label: 'GitHub',
-  nodeTypes: ['github.sync', 'github.readIssues', 'github.createPR'],
+  nodeTypes: ['github.sync', 'github.readIssues', 'backlog.syncIssues', 'github.createPR'],
 };

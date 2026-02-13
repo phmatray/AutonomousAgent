@@ -45,6 +45,9 @@ mod tests {
             claude: Arc::new(ClaudeProvider::new())
                 as Arc<dyn crate::services::workflow_engine::node_registry::ClaudeRunner>,
             git: Arc::new(GitService::new()),
+            backlog: Arc::new(crate::services::BacklogService::new(Arc::new(
+                tokio::sync::RwLock::new(None),
+            ))),
         }
     }
 

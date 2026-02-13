@@ -4,6 +4,7 @@ GitHub nodes shown in the editor:
 
 - `github.sync`
 - `github.readIssues`
+- `backlog.syncIssues`
 - `github.createPR`
 
 Related editor files:
@@ -20,4 +21,5 @@ Runtime documentation:
 
 - `docs/nodes/github-sync/README.md`
 - `docs/nodes/github-read-issues/README.md`
+- `docs/nodes/backlog-sync-issues/README.md`
 - `docs/nodes/github-create-pr/README.md`

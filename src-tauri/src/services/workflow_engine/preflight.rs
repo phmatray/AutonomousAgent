@@ -389,7 +389,10 @@ async fn check_github_credentials(
     services: Option<&ServiceProvider>,
     issues: &mut Vec<PreflightIssue>,
 ) {
-    if !node.node_type.starts_with("github.") {
+    let uses_github_auth =
+        node.node_type.starts_with("github.") || node.node_type == "backlog.syncIssues";
+
+    if !uses_github_auth {
         return;
     }
 

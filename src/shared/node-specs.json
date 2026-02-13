@@ -197,6 +197,42 @@
       ]
     },
     {
+      "type": "backlog.syncIssues",
+      "label": "Sync Issues to Backlog",
+      "category": "github",
+      "fields": [
+        {
+          "key": "credential_id",
+          "label": "Credentials",
+          "type": "select",
+          "required": false,
+          "description": "GitHub account credentials to use for this node"
+        },
+        {
+          "key": "owner",
+          "label": "Owner",
+          "type": "template",
+          "required": true,
+          "placeholder": "{{sync.owner}}",
+          "description": "Repository owner (supports template references)"
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "type": "template",
+          "required": true,
+          "placeholder": "{{sync.repo}}",
+          "description": "Repository name (supports template references)"
+        }
+      ],
+      "outputs": [
+        { "name": "owner", "description": "Repository owner" },
+        { "name": "repo", "description": "Repository name" },
+        { "name": "count", "description": "Number of issues synced into backlog" },
+        { "name": "items", "description": "Synced backlog items for the repository" }
+      ]
+    },
+    {
       "type": "github.createPR",
       "label": "Create PR",
       "category": "github",

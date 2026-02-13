@@ -205,6 +205,70 @@ impl NodeExecutor for GithubReadIssuesNode {
     }
 }
 
+/// Fetch open issues from a GitHub repository and sync them into backlog storage.
+///
+/// Config:
+///   - `owner`: repository owner (or `{{node_id.owner}}`)
+///   - `repo`: repository name (or `{{node_id.repo}}`)
+///
+/// Output:
+///   - `owner`: repository owner
+///   - `repo`: repository name
+///   - `count`: number of backlog items synced for this repository
+///   - `items`: synced backlog items
+pub struct BacklogSyncIssuesNode;
+
+#[async_trait]
+impl NodeExecutor for BacklogSyncIssuesNode {
+    fn node_type(&self) -> &'static str {
+        "backlog.syncIssues"
+    }
+
+    fn validate(&self, config: &Value) -> Result<()> {
+        for field in &["owner", "repo"] {
+            if config.get(field).and_then(|v| v.as_str()).is_none() {
+                return Err(AppError::Validation(format!(
+                    "backlog.syncIssues requires '{}' in config",
+                    field
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    async fn execute(
+        &self,
+        _node_id: &str,
+        config: &Value,
+        context: &ExecutionContext,
+        services: &ServiceProvider,
+    ) -> Result<Value> {
+        let resolved = context.resolve_value(config)?;
+        authenticate_for_config(&resolved, services, true).await?;
+
+        let owner = resolved["owner"]
+            .as_str()
+            .ok_or_else(|| AppError::Validation("owner must be a string".into()))?;
+        let repo = resolved["repo"]
+            .as_str()
+            .ok_or_else(|| AppError::Validation("repo must be a string".into()))?;
+
+        let issues = services.github.list_issues(owner, repo).await?;
+        let synced_items = services
+            .backlog
+            .sync_issues_to_backlog(owner, repo, issues)
+            .await?;
+        let count = synced_items.len();
+
+        Ok(serde_json::json!({
+            "owner": owner,
+            "repo": repo,
+            "count": count,
+            "items": synced_items,
+        }))
+    }
+}
+
 /// Create a pull request on GitHub.
 ///
 /// Config:
