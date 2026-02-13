@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMachine } from '@xstate/react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { WorkflowExecution, ExecutionLog, ExecutionStatus } from '@/types/workflow';
-import { copyDebugBundle } from '@/lib/api/workflow';
+import { copyDebugBundle, type DebugBundleCredentialAuditFilter } from '@/lib/api/workflow';
 import { useRouter } from '@/lib/router';
 import { monitoringMachine } from './monitoring-machine';
 
@@ -28,6 +28,10 @@ const SIDEBAR_WIDTH_STORAGE_KEY = 'autonomous-agent.monitoring.sidebar-width';
 const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 480;
 const SIDEBAR_DEFAULT_WIDTH = 288;
+const MAX_DEBUG_BUNDLE_CREDENTIAL_EVENTS = 200;
+
+type DebugBundleExportMode = 'full' | 'credentialFiltered';
+type DebugBundleResultFilter = 'all' | 'success' | 'failure';
 
 function clampSidebarWidth(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
@@ -72,6 +76,15 @@ function formatExportError(error: unknown): string {
   } catch {
     return 'Failed to export debug bundle';
   }
+}
+
+function toDateBoundaryIso(localDate: string, endOfDay: boolean): string | null {
+  const trimmed = localDate.trim();
+  if (!trimmed) return null;
+
+  const date = new Date(`${trimmed}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
 }
 
 async function copyTextToClipboard(text: string): Promise<void> {
@@ -404,12 +417,51 @@ export function MonitoringPage() {
     copied: 'none',
     error: null,
   });
+  const [debugBundleExportMode, setDebugBundleExportMode] =
+    useState<DebugBundleExportMode>('full');
+  const [bundleCredentialProviderFilter, setBundleCredentialProviderFilter] = useState('all');
+  const [bundleCredentialActionFilter, setBundleCredentialActionFilter] = useState('all');
+  const [bundleCredentialResultFilter, setBundleCredentialResultFilter] =
+    useState<DebugBundleResultFilter>('all');
+  const [bundleCredentialFromDate, setBundleCredentialFromDate] = useState('');
+  const [bundleCredentialToDate, setBundleCredentialToDate] = useState('');
+  const [bundleCredentialLimit, setBundleCredentialLimit] = useState('100');
+
+  const bundleFromTimestamp = toDateBoundaryIso(bundleCredentialFromDate, false);
+  const bundleToTimestamp = toDateBoundaryIso(bundleCredentialToDate, true);
+  const hasInvalidBundleDateRange = Boolean(
+    bundleFromTimestamp
+      && bundleToTimestamp
+      && new Date(bundleFromTimestamp).getTime() > new Date(bundleToTimestamp).getTime(),
+  );
 
   const handleCopyDebugBundle = async () => {
-    if (!selectedExecutionId || copyState.isCopying) return;
+    if (!selectedExecutionId || copyState.isCopying || hasInvalidBundleDateRange) return;
+
+    let credentialAuditFilter: DebugBundleCredentialAuditFilter | undefined;
+    if (debugBundleExportMode === 'credentialFiltered') {
+      const parsedLimit = Number.parseInt(bundleCredentialLimit, 10);
+      const limit = Number.isFinite(parsedLimit)
+        ? Math.min(MAX_DEBUG_BUNDLE_CREDENTIAL_EVENTS, Math.max(1, parsedLimit))
+        : 100;
+
+      credentialAuditFilter = {
+        provider: bundleCredentialProviderFilter !== 'all'
+          ? bundleCredentialProviderFilter
+          : undefined,
+        action: bundleCredentialActionFilter !== 'all'
+          ? bundleCredentialActionFilter
+          : undefined,
+        result: bundleCredentialResultFilter,
+        fromTimestamp: bundleFromTimestamp ?? undefined,
+        toTimestamp: bundleToTimestamp ?? undefined,
+        limit,
+      };
+    }
+
     setCopyState({ isCopying: true, copied: 'none', error: null });
     try {
-      const result = await copyDebugBundle(selectedExecutionId);
+      const result = await copyDebugBundle(selectedExecutionId, credentialAuditFilter);
       try {
         await copyTextToClipboard(result.bundleJson);
         setCopyState({ isCopying: false, copied: 'clipboard', error: null });
@@ -545,7 +597,7 @@ export function MonitoringPage() {
                 <button
                   type="button"
                   onClick={handleCopyDebugBundle}
-                  disabled={copyState.isCopying}
+                  disabled={copyState.isCopying || hasInvalidBundleDateRange}
                   className="px-3 py-1.5 text-sm bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label="Copy debug bundle"
                 >
@@ -563,6 +615,108 @@ export function MonitoringPage() {
                 )}
               </div>
             </header>
+            <div className="px-4 py-3 border-b border-gray-800 bg-gray-900/80">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <label className="text-xs text-gray-300">
+                  Export Mode
+                  <select
+                    value={debugBundleExportMode}
+                    onChange={(event) => setDebugBundleExportMode(
+                      event.target.value as DebugBundleExportMode,
+                    )}
+                    className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                  >
+                    <option value="full">Full bundle</option>
+                    <option value="credentialFiltered">Filter credential activity</option>
+                  </select>
+                </label>
+
+                {debugBundleExportMode === 'credentialFiltered' && (
+                  <>
+                    <label className="text-xs text-gray-300">
+                      Provider
+                      <select
+                        value={bundleCredentialProviderFilter}
+                        onChange={(event) => setBundleCredentialProviderFilter(event.target.value)}
+                        className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                      >
+                        <option value="all">All providers</option>
+                        <option value="github">GitHub</option>
+                        <option value="claude">Claude</option>
+                      </select>
+                    </label>
+
+                    <label className="text-xs text-gray-300">
+                      Action
+                      <select
+                        value={bundleCredentialActionFilter}
+                        onChange={(event) => setBundleCredentialActionFilter(event.target.value)}
+                        className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                      >
+                        <option value="all">All actions</option>
+                        <option value="save_token">save_token</option>
+                        <option value="delete_token">delete_token</option>
+                        <option value="delete_credential">delete_credential</option>
+                        <option value="verify_reveal">verify_reveal</option>
+                        <option value="save_credential">save_credential</option>
+                      </select>
+                    </label>
+
+                    <label className="text-xs text-gray-300">
+                      Result
+                      <select
+                        value={bundleCredentialResultFilter}
+                        onChange={(event) => setBundleCredentialResultFilter(
+                          event.target.value as DebugBundleResultFilter,
+                        )}
+                        className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                      >
+                        <option value="all">All results</option>
+                        <option value="success">Success</option>
+                        <option value="failure">Failure</option>
+                      </select>
+                    </label>
+
+                    <label className="text-xs text-gray-300">
+                      From date
+                      <input
+                        type="date"
+                        value={bundleCredentialFromDate}
+                        onChange={(event) => setBundleCredentialFromDate(event.target.value)}
+                        className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                      />
+                    </label>
+
+                    <label className="text-xs text-gray-300">
+                      To date
+                      <input
+                        type="date"
+                        value={bundleCredentialToDate}
+                        onChange={(event) => setBundleCredentialToDate(event.target.value)}
+                        className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                      />
+                    </label>
+
+                    <label className="text-xs text-gray-300">
+                      Max events
+                      <input
+                        type="number"
+                        min={1}
+                        max={MAX_DEBUG_BUNDLE_CREDENTIAL_EVENTS}
+                        value={bundleCredentialLimit}
+                        onChange={(event) => setBundleCredentialLimit(event.target.value)}
+                        className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                      />
+                    </label>
+                  </>
+                )}
+              </div>
+              {hasInvalidBundleDateRange && (
+                <p className="mt-2 text-xs text-red-400" role="alert">
+                  Credential activity date range is invalid: start date must be before end date.
+                </p>
+              )}
+            </div>
             {(logsError || cancelError) && (
               <div className="px-4 py-2 border-b border-gray-800 bg-red-900/20 text-xs text-red-300">
                 {cancelError && (

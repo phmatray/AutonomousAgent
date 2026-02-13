@@ -1,13 +1,21 @@
 import { mockIPC } from '@tauri-apps/api/mocks';
 
 type RecordAny = Record<string, unknown>;
+type CredentialAuditEventMock = {
+  id: string;
+  provider: string;
+  action: string;
+  success: boolean;
+  detail?: string;
+  timestamp: string;
+};
 
 export interface E2EState {
   workflows: RecordAny[];
   auth: RecordAny;
   executions: RecordAny[];
   logsByExecutionId: Record<string, RecordAny[]>;
-  credentialAuditEvents: RecordAny[];
+  credentialAuditEvents: CredentialAuditEventMock[];
   invokeLog: Array<{ cmd: string; args: RecordAny }>;
   commandFailures: Record<string, string>;
   commandDelaysMs: Record<string, number>;
@@ -227,6 +235,40 @@ export function installWebDriverTauriMock() {
     if (cmd === 'copy_debug_bundle') {
       const executionId = String(args.executionId ?? '');
       const execution = state.executions.find((item) => item.id === executionId) ?? null;
+      const filter = (args.credentialAuditFilter ?? null) as {
+        provider?: string;
+        action?: string;
+        result?: 'all' | 'success' | 'failure';
+        fromTimestamp?: string;
+        toTimestamp?: string;
+        limit?: number;
+      } | null;
+      const fromTimestampMs = filter?.fromTimestamp ? Date.parse(filter.fromTimestamp) : Number.NaN;
+      const toTimestampMs = filter?.toTimestamp ? Date.parse(filter.toTimestamp) : Number.NaN;
+      const providerFilter = filter?.provider?.trim().toLowerCase() ?? '';
+      const actionFilter = filter?.action?.trim().toLowerCase() ?? '';
+      const resultFilter = filter?.result ?? 'all';
+      const limitRaw = Number(filter?.limit ?? 100);
+      const limit = Number.isFinite(limitRaw)
+        ? Math.min(200, Math.max(1, Math.floor(limitRaw)))
+        : 100;
+
+      const credentialAuditEvents = state.credentialAuditEvents
+        .filter((event) => {
+          if (providerFilter && event.provider.toLowerCase() !== providerFilter) return false;
+          if (actionFilter && event.action.toLowerCase() !== actionFilter) return false;
+          if (resultFilter === 'success' && !event.success) return false;
+          if (resultFilter === 'failure' && event.success) return false;
+          if (!Number.isNaN(fromTimestampMs) && Date.parse(event.timestamp) < fromTimestampMs) {
+            return false;
+          }
+          if (!Number.isNaN(toTimestampMs) && Date.parse(event.timestamp) > toTimestampMs) {
+            return false;
+          }
+          return true;
+        })
+        .slice(0, limit);
+
       return {
         bundleJson: JSON.stringify(
           {
@@ -236,7 +278,7 @@ export function installWebDriverTauriMock() {
             execution,
             workflow: null,
             logs: executionId ? (state.logsByExecutionId[executionId] ?? []) : [],
-            credentialAuditEvents: state.credentialAuditEvents,
+            credentialAuditEvents,
           },
           null,
           2,

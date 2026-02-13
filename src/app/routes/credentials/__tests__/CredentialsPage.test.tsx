@@ -31,6 +31,14 @@ function mockCredentialCommands(options?: {
     label: string;
     is_default: boolean;
   }>;
+  auditEvents?: Array<{
+    id: string;
+    provider: string;
+    action: string;
+    success: boolean;
+    detail?: string;
+    timestamp: string;
+  }>;
 }) {
   mockInvoke.mockImplementation((cmd: string) => {
     if (cmd === 'get_auth_status') {
@@ -68,7 +76,7 @@ function mockCredentialCommands(options?: {
       return Promise.resolve({ valid: true, username: 'test-user' });
     }
     if (cmd === 'list_credential_audit_events') {
-      return Promise.resolve([]);
+      return Promise.resolve(options?.auditEvents ?? []);
     }
     if (cmd === 'save_claude_credential') {
       return Promise.resolve({ configured: true, account_label: null });
@@ -219,6 +227,83 @@ describe('CredentialsPage', () => {
       expect(mockInvoke).toHaveBeenCalledWith('delete_github_credential', {
         credentialId: 'alice',
       });
+    });
+  });
+
+  it('supports credential activity date filtering and pagination', async () => {
+    const user = userEvent.setup();
+    mockCredentialCommands({
+      auditEvents: [
+        {
+          id: 'audit-1',
+          provider: 'github',
+          action: 'save_token',
+          success: true,
+          timestamp: '2026-01-10T09:00:00.000Z',
+        },
+        {
+          id: 'audit-2',
+          provider: 'github',
+          action: 'delete_token',
+          success: true,
+          timestamp: '2026-01-11T09:00:00.000Z',
+        },
+        {
+          id: 'audit-3',
+          provider: 'claude',
+          action: 'save_credential',
+          success: true,
+          timestamp: '2026-01-12T09:00:00.000Z',
+        },
+        {
+          id: 'audit-4',
+          provider: 'github',
+          action: 'save_token',
+          success: true,
+          timestamp: '2026-01-13T09:00:00.000Z',
+        },
+        {
+          id: 'audit-5',
+          provider: 'github',
+          action: 'verify_reveal',
+          success: true,
+          timestamp: '2026-01-14T09:00:00.000Z',
+        },
+        {
+          id: 'audit-6',
+          provider: 'claude',
+          action: 'save_credential',
+          success: true,
+          timestamp: '2026-01-15T09:00:00.000Z',
+        },
+      ],
+    });
+
+    render(<CredentialsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Showing 1-6 of 6 matching events.')).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByLabelText('Page size'), '5');
+
+    await waitFor(() => {
+      expect(screen.getByText('Showing 1-5 of 6 matching events.')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Showing 6-6 of 6 matching events.')).toBeInTheDocument();
+    });
+
+    await user.clear(screen.getByLabelText('From date'));
+    await user.type(screen.getByLabelText('From date'), '2026-01-11');
+    await user.clear(screen.getByLabelText('To date'));
+    await user.type(screen.getByLabelText('To date'), '2026-01-12');
+
+    await waitFor(() => {
+      expect(screen.getByText('Showing 1-2 of 2 matching events.')).toBeInTheDocument();
     });
   });
 });

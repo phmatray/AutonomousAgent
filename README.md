@@ -230,7 +230,7 @@ The frontend communicates with the backend via Tauri's invoke system. The app cu
 | | `cancel_workflow_execution` | Cancel a running execution |
 | | `list_executions` | List execution history |
 | | `get_execution_logs` | Get logs for an execution |
-| | `copy_debug_bundle` | Export execution debug bundle (including credential activity metadata) |
+| | `copy_debug_bundle` | Export execution debug bundle with optional credential-activity filters |
 | **GitHub** | `authenticate_github` | Authenticate with token |
 | | `list_github_credentials` | List saved GitHub credential entries |
 | | `list_repositories` | List user repositories |

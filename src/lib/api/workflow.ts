@@ -6,6 +6,15 @@ import type {
   WorkflowPreflightResult,
 } from '@/types/workflow';
 
+export interface DebugBundleCredentialAuditFilter {
+  provider?: string;
+  action?: string;
+  result?: 'all' | 'success' | 'failure';
+  fromTimestamp?: string;
+  toTimestamp?: string;
+  limit?: number;
+}
+
 interface WorkflowCommandPayloads {
   list_workflows: undefined;
   get_workflow: { id: string };
@@ -17,7 +26,10 @@ interface WorkflowCommandPayloads {
   list_executions: { workflowId?: string };
   get_execution_logs: { executionId: string };
   cancel_workflow_execution: { executionId: string };
-  copy_debug_bundle: { executionId: string };
+  copy_debug_bundle: {
+    executionId: string;
+    credentialAuditFilter?: DebugBundleCredentialAuditFilter;
+  };
 }
 
 interface WorkflowCommandResults {
@@ -98,6 +110,12 @@ export async function cancelExecution(executionId: string): Promise<void> {
   return invokeWorkflowCommand('cancel_workflow_execution', { executionId });
 }
 
-export async function copyDebugBundle(executionId: string): Promise<{ bundleJson: string }> {
-  return invokeWorkflowCommand('copy_debug_bundle', { executionId });
+export async function copyDebugBundle(
+  executionId: string,
+  credentialAuditFilter?: DebugBundleCredentialAuditFilter,
+): Promise<{ bundleJson: string }> {
+  return invokeWorkflowCommand('copy_debug_bundle', {
+    executionId,
+    credentialAuditFilter,
+  });
 }

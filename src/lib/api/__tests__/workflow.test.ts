@@ -10,6 +10,7 @@ import {
   listExecutions,
   getExecutionLogs,
   cancelExecution,
+  copyDebugBundle,
 } from '@/lib/api/workflow';
 import type { Workflow, WorkflowExecution, ExecutionLog } from '@/types/workflow';
 
@@ -241,6 +242,45 @@ describe('workflow API', () => {
       mockInvoke.mockRejectedValueOnce(new Error('Execution already completed'));
 
       await expect(cancelExecution('exec-1')).rejects.toThrow('Execution already completed');
+    });
+  });
+
+  describe('copyDebugBundle', () => {
+    it('calls invoke with execution id and no filter by default', async () => {
+      mockInvoke.mockResolvedValueOnce({ bundleJson: '{}' });
+
+      const result = await copyDebugBundle('exec-1');
+
+      expect(mockInvoke).toHaveBeenCalledWith('copy_debug_bundle', {
+        executionId: 'exec-1',
+        credentialAuditFilter: undefined,
+      });
+      expect(result).toEqual({ bundleJson: '{}' });
+    });
+
+    it('passes credential activity filter when provided', async () => {
+      mockInvoke.mockResolvedValueOnce({ bundleJson: '{"credentialAuditEvents":[]}' });
+
+      await copyDebugBundle('exec-1', {
+        provider: 'github',
+        action: 'save_token',
+        result: 'failure',
+        fromTimestamp: '2026-01-01T00:00:00.000Z',
+        toTimestamp: '2026-01-31T23:59:59.999Z',
+        limit: 25,
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith('copy_debug_bundle', {
+        executionId: 'exec-1',
+        credentialAuditFilter: {
+          provider: 'github',
+          action: 'save_token',
+          result: 'failure',
+          fromTimestamp: '2026-01-01T00:00:00.000Z',
+          toTimestamp: '2026-01-31T23:59:59.999Z',
+          limit: 25,
+        },
+      });
     });
   });
 });

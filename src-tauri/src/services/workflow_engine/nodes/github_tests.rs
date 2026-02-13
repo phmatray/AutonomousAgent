@@ -9,20 +9,39 @@ mod tests {
     };
     use crate::services::{GitHubClient, GitService, StorageService};
     use serde_json::json;
+    use sqlx::sqlite::SqlitePool;
     use std::sync::Arc;
+    use tokio::sync::RwLock;
 
     /// Create a ServiceProvider with unauthenticated services for testing.
     /// GitHub calls will fail with "Not authenticated" which is useful for
     /// testing error propagation from external service failures.
-    fn test_services() -> ServiceProvider {
+    async fn test_services() -> ServiceProvider {
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("sqlite memory pool");
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                encrypted INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
+            )",
+        )
+        .execute(&pool)
+        .await
+        .expect("create config table");
+
+        let storage = StorageService::with_db_pool_handle(Arc::new(RwLock::new(Some(pool))));
+
         ServiceProvider {
             github: Arc::new(GitHubClient::new()),
-            storage: Arc::new(StorageService::new()),
+            storage: Arc::new(storage),
             claude: Arc::new(ClaudeProvider::new()),
             git: Arc::new(GitService::new()),
-            backlog: Arc::new(crate::services::BacklogService::new(Arc::new(
-                tokio::sync::RwLock::new(None),
-            ))),
+            backlog: Arc::new(crate::services::BacklogService::new(Arc::new(RwLock::new(
+                None,
+            )))),
         }
     }
 
@@ -154,7 +173,7 @@ mod tests {
             "path": "/tmp/repos"
         });
         let context = test_context();
-        let services = test_services();
+        let services = test_services().await;
 
         let result = node.execute("sync-1", &config, &context, &services).await;
         assert!(result.is_err(), "Should fail when owner is missing");
@@ -168,7 +187,7 @@ mod tests {
             "path": "/tmp/repos"
         });
         let context = test_context();
-        let services = test_services();
+        let services = test_services().await;
 
         let result = node.execute("sync-1", &config, &context, &services).await;
         assert!(result.is_err(), "Should fail when repo is missing");
@@ -182,7 +201,7 @@ mod tests {
             "repo": "test-repo"
         });
         let context = test_context();
-        let services = test_services();
+        let services = test_services().await;
 
         let result = node.execute("sync-1", &config, &context, &services).await;
         assert!(result.is_err(), "Should fail when path is missing");
@@ -198,7 +217,7 @@ mod tests {
             "path": "/tmp/test-autonomous-agent-nonexistent"
         });
         let context = test_context();
-        let services = test_services();
+        let services = test_services().await;
 
         let result = node.execute("sync-1", &config, &context, &services).await;
         assert!(
@@ -295,7 +314,7 @@ mod tests {
             "repo": "test-repo"
         });
         let context = test_context();
-        let services = test_services();
+        let services = test_services().await;
 
         let result = node.execute("read-1", &config, &context, &services).await;
         assert!(
@@ -321,7 +340,7 @@ mod tests {
                 "repo": "resolved-repo"
             }),
         );
-        let services = test_services();
+        let services = test_services().await;
 
         // The template resolution should succeed, but the GitHub call should fail
         // (unauthenticated client). This tests that template resolution works
@@ -349,7 +368,7 @@ mod tests {
             "repo": "test-repo"
         });
         let context = test_context();
-        let services = test_services();
+        let services = test_services().await;
 
         let result = node.execute("read-1", &config, &context, &services).await;
         assert!(
@@ -434,7 +453,7 @@ mod tests {
             "repo": "test-repo"
         });
         let context = test_context();
-        let services = test_services();
+        let services = test_services().await;
 
         let result = node
             .execute("backlog-sync-1", &config, &context, &services)
@@ -460,7 +479,7 @@ mod tests {
                 "repo": "resolved-repo"
             }),
         );
-        let services = test_services();
+        let services = test_services().await;
 
         let result = node
             .execute("backlog-sync-1", &config, &context, &services)
@@ -482,7 +501,7 @@ mod tests {
             "repo": "test-repo"
         });
         let context = test_context();
-        let services = test_services();
+        let services = test_services().await;
 
         let result = node
             .execute("backlog-sync-1", &config, &context, &services)
@@ -642,7 +661,7 @@ mod tests {
             "base": "develop"
         });
         let context = test_context();
-        let services = test_services();
+        let services = test_services().await;
 
         let result = node.execute("pr-1", &config, &context, &services).await;
         assert!(
@@ -676,7 +695,7 @@ mod tests {
                 "number": 42
             }),
         );
-        let services = test_services();
+        let services = test_services().await;
 
         // Template resolution should succeed; GitHub call should fail (unauthenticated)
         let result = node.execute("pr-1", &config, &context, &services).await;
@@ -700,7 +719,7 @@ mod tests {
             "base": "develop"
         });
         let context = test_context();
-        let services = test_services();
+        let services = test_services().await;
 
         let result = node.execute("pr-1", &config, &context, &services).await;
         assert!(
@@ -722,7 +741,7 @@ mod tests {
             // No "base" field - should default to "develop"
         });
         let context = test_context();
-        let services = test_services();
+        let services = test_services().await;
 
         let result = node.execute("pr-1", &config, &context, &services).await;
         // Should fail at GitHub API, not at config extraction
@@ -747,7 +766,7 @@ mod tests {
             // No "body" field - should default to ""
         });
         let context = test_context();
-        let services = test_services();
+        let services = test_services().await;
 
         let result = node.execute("pr-1", &config, &context, &services).await;
         // Should fail at GitHub API, not at config extraction

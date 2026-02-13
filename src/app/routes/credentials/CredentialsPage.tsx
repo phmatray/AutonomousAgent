@@ -25,7 +25,10 @@ interface GitHubAuthStatus {
 }
 
 type SaveState = 'idle' | 'success' | 'error';
+type AuditResultFilter = 'all' | 'success' | 'failure';
 const GITHUB_TOKEN_AUTOFILL_STORAGE_KEY = 'credentials.github.token_autofill';
+const CREDENTIAL_AUDIT_FETCH_LIMIT = 200;
+const AUDIT_PAGE_SIZE_OPTIONS = [5, 10, 20, 50] as const;
 
 function getBrowserStorage(): Pick<Storage, 'getItem' | 'setItem'> | null {
   const storage = window.localStorage as Partial<Storage> | undefined;
@@ -61,6 +64,13 @@ function toAuditActionLabel(event: CredentialAuditEvent): string {
   };
 
   return actionMap[event.action] ?? event.action;
+}
+
+function toAuditDateBoundary(dateValue: string, endOfDay: boolean): Date | null {
+  const trimmed = dateValue.trim();
+  if (!trimmed) return null;
+  const date = new Date(`${trimmed}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}`);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function triggerCredentialAuditDownload(events: CredentialAuditEvent[], filters: Record<string, string>) {
@@ -131,7 +141,12 @@ export function CredentialsPage() {
   const [isRefreshingCredentialAudit, setIsRefreshingCredentialAudit] = useState(false);
   const [auditProviderFilter, setAuditProviderFilter] = useState('all');
   const [auditActionFilter, setAuditActionFilter] = useState('all');
-  const [auditResultFilter, setAuditResultFilter] = useState('all');
+  const [auditResultFilter, setAuditResultFilter] = useState<AuditResultFilter>('all');
+  const [auditFromDate, setAuditFromDate] = useState('');
+  const [auditToDate, setAuditToDate] = useState('');
+  const [auditPageSize, setAuditPageSize] =
+    useState<(typeof AUDIT_PAGE_SIZE_OPTIONS)[number]>(10);
+  const [auditPage, setAuditPage] = useState(1);
 
   const refreshGitHubStatus = useCallback(async () => {
     setIsRefreshingGithub(true);
@@ -149,7 +164,7 @@ export function CredentialsPage() {
   const refreshCredentialAudit = useCallback(async () => {
     setIsRefreshingCredentialAudit(true);
     try {
-      const events = await listCredentialAuditEvents(12);
+      const events = await listCredentialAuditEvents(CREDENTIAL_AUDIT_FETCH_LIMIT);
       setCredentialAuditEvents(events);
       setCredentialAuditError(false);
     } catch {
@@ -418,6 +433,9 @@ export function CredentialsPage() {
   }, [credentialAuditEvents]);
 
   const filteredCredentialAuditEvents = useMemo(() => {
+    const fromBoundary = toAuditDateBoundary(auditFromDate, false);
+    const toBoundary = toAuditDateBoundary(auditToDate, true);
+
     return credentialAuditEvents.filter((event) => {
       if (auditProviderFilter !== 'all' && event.provider !== auditProviderFilter) {
         return false;
@@ -431,15 +449,62 @@ export function CredentialsPage() {
       if (auditResultFilter === 'failure' && event.success) {
         return false;
       }
+      const eventTimestamp = new Date(event.timestamp);
+      if (!Number.isNaN(eventTimestamp.getTime())) {
+        if (fromBoundary && eventTimestamp < fromBoundary) {
+          return false;
+        }
+        if (toBoundary && eventTimestamp > toBoundary) {
+          return false;
+        }
+      }
       return true;
     });
-  }, [credentialAuditEvents, auditProviderFilter, auditActionFilter, auditResultFilter]);
+  }, [
+    credentialAuditEvents,
+    auditProviderFilter,
+    auditActionFilter,
+    auditResultFilter,
+    auditFromDate,
+    auditToDate,
+  ]);
+
+  const hasInvalidAuditDateRange = useMemo(() => {
+    const fromBoundary = toAuditDateBoundary(auditFromDate, false);
+    const toBoundary = toAuditDateBoundary(auditToDate, true);
+    return Boolean(
+      fromBoundary && toBoundary && fromBoundary.getTime() > toBoundary.getTime(),
+    );
+  }, [auditFromDate, auditToDate]);
+
+  const totalAuditPages = Math.max(1, Math.ceil(filteredCredentialAuditEvents.length / auditPageSize));
+  const paginatedCredentialAuditEvents = useMemo(() => {
+    const startIndex = (auditPage - 1) * auditPageSize;
+    return filteredCredentialAuditEvents.slice(startIndex, startIndex + auditPageSize);
+  }, [filteredCredentialAuditEvents, auditPage, auditPageSize]);
+
+  useEffect(() => {
+    setAuditPage(1);
+  }, [
+    auditProviderFilter,
+    auditActionFilter,
+    auditResultFilter,
+    auditFromDate,
+    auditToDate,
+    auditPageSize,
+  ]);
+
+  useEffect(() => {
+    setAuditPage((currentPage) => Math.min(currentPage, totalAuditPages));
+  }, [totalAuditPages]);
 
   const exportFilteredCredentialAudit = () => {
     triggerCredentialAuditDownload(filteredCredentialAuditEvents, {
       provider: auditProviderFilter,
       action: auditActionFilter,
       result: auditResultFilter,
+      from_date: auditFromDate || 'all',
+      to_date: auditToDate || 'all',
     });
   };
 
@@ -639,7 +704,7 @@ export function CredentialsPage() {
             <button
               type="button"
               onClick={exportFilteredCredentialAudit}
-              disabled={filteredCredentialAuditEvents.length === 0}
+              disabled={filteredCredentialAuditEvents.length === 0 || hasInvalidAuditDateRange}
               className="px-3 py-1.5 text-xs bg-gray-700 text-gray-100 rounded hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Export JSON
@@ -661,7 +726,7 @@ export function CredentialsPage() {
           <p className="text-sm text-gray-400">No credential activity yet.</p>
         ) : (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-3">
               <label className="text-xs text-gray-300">
                 Provider
                 <select
@@ -698,7 +763,7 @@ export function CredentialsPage() {
                 Result
                 <select
                   value={auditResultFilter}
-                  onChange={(event) => setAuditResultFilter(event.target.value)}
+                  onChange={(event) => setAuditResultFilter(event.target.value as AuditResultFilter)}
                   className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
                 >
                   <option value="all">All results</option>
@@ -706,13 +771,65 @@ export function CredentialsPage() {
                   <option value="failure">Failure</option>
                 </select>
               </label>
+
+              <label className="text-xs text-gray-300">
+                From date
+                <input
+                  type="date"
+                  value={auditFromDate}
+                  onChange={(event) => setAuditFromDate(event.target.value)}
+                  className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                />
+              </label>
+
+              <label className="text-xs text-gray-300">
+                To date
+                <input
+                  type="date"
+                  value={auditToDate}
+                  onChange={(event) => setAuditToDate(event.target.value)}
+                  className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                />
+              </label>
+
+              <label className="text-xs text-gray-300">
+                Page size
+                <select
+                  value={String(auditPageSize)}
+                  onChange={(event) => {
+                    const nextSize = Number(event.target.value);
+                    if (AUDIT_PAGE_SIZE_OPTIONS.includes(nextSize as (typeof AUDIT_PAGE_SIZE_OPTIONS)[number])) {
+                      setAuditPageSize(nextSize as (typeof AUDIT_PAGE_SIZE_OPTIONS)[number]);
+                    }
+                  }}
+                  className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                >
+                  {AUDIT_PAGE_SIZE_OPTIONS.map((pageSize) => (
+                    <option key={pageSize} value={pageSize}>
+                      {pageSize} events
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
+
+            {hasInvalidAuditDateRange ? (
+              <p className="text-sm text-red-400 mb-3">
+                Date range is invalid. Choose a start date before the end date.
+              </p>
+            ) : null}
 
             {filteredCredentialAuditEvents.length === 0 ? (
               <p className="text-sm text-gray-400">No activity matches the current filters.</p>
             ) : (
-              <ul className="space-y-2" aria-label="Credential activity log">
-                {filteredCredentialAuditEvents.map((event) => (
+              <>
+                <p className="text-xs text-gray-400 mb-2">
+                  Showing {(auditPage - 1) * auditPageSize + 1}-
+                  {Math.min(auditPage * auditPageSize, filteredCredentialAuditEvents.length)} of{' '}
+                  {filteredCredentialAuditEvents.length} matching events.
+                </p>
+                <ul className="space-y-2" aria-label="Credential activity log">
+                  {paginatedCredentialAuditEvents.map((event) => (
                   <li key={event.id} className="flex items-start justify-between gap-3 text-sm border-b border-gray-700/70 pb-2">
                     <div>
                       <p className={event.success ? 'text-green-300' : 'text-red-300'}>
@@ -722,8 +839,30 @@ export function CredentialsPage() {
                     </div>
                     <time className="text-xs text-gray-500">{formatAuditTimestamp(event.timestamp)}</time>
                   </li>
-                ))}
-              </ul>
+                  ))}
+                </ul>
+                <div className="mt-3 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setAuditPage((currentPage) => Math.max(1, currentPage - 1))}
+                    disabled={auditPage <= 1}
+                    className="px-2.5 py-1 text-xs bg-gray-700 text-gray-100 rounded hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <p className="text-xs text-gray-400">
+                    Page {auditPage} of {totalAuditPages}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setAuditPage((currentPage) => Math.min(totalAuditPages, currentPage + 1))}
+                    disabled={auditPage >= totalAuditPages}
+                    className="px-2.5 py-1 text-xs bg-gray-700 text-gray-100 rounded hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              </>
             )}
           </>
         )}
