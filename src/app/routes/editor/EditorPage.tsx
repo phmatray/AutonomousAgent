@@ -6,7 +6,7 @@ import { NodePalette } from '@/features/workflow-editor/components/NodePalette';
 import { NodeConfigPanel } from '@/features/workflow-editor/components/NodeConfigPanel';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useEditorStore } from '@/features/workflow-editor/stores/editor-store';
-import { createWorkflow, updateWorkflow, getWorkflow } from '@/lib/api/workflow';
+import { createWorkflow, updateWorkflow, getWorkflow, executeWorkflow } from '@/lib/api/workflow';
 import { useRouter } from '@/lib/router';
 import type { NodeType, Workflow } from '@/types/workflow';
 
@@ -148,8 +148,9 @@ export function EditorPage() {
   }, [saveWorkflowMutation]);
 
   const handleExecute = useCallback(() => {
-    // Placeholder for execute action
-  }, []);
+    if (!workflowId) return;
+    executeWorkflow(workflowId, 'manual');
+  }, [workflowId]);
 
   const handleDragStart = useCallback((type: NodeType, startX: number, startY: number) => {
     setDragState({

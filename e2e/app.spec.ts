@@ -78,6 +78,18 @@ test.beforeEach(async ({ page }) => {
           state.auth = { authenticated: true, username: 'e2e-user' };
           return { success: true, username: 'e2e-user' };
         }
+        if (cmd === 'execute_workflow') {
+          const workflowId = (args.workflowId as string | undefined) ?? 'wf-created';
+          const execution = {
+            id: `exec-${Date.now()}`,
+            workflowId,
+            status: 'RUNNING',
+            triggerType: (args.triggerType as string | undefined) ?? 'manual',
+            startedAt: new Date().toISOString(),
+          };
+          state.executions = [execution, ...state.executions];
+          return execution;
+        }
         if (cmd === 'list_executions') return state.executions;
         if (cmd === 'get_execution_logs') {
           const executionId = args.executionId as string;
@@ -315,4 +327,30 @@ test('shows dashboard error when workflow deletion fails', async ({ page }) => {
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
 
   await expect(page.getByRole('alert')).toContainText('Failed to delete workflow');
+});
+
+test('executes saved workflow from editor', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate((workflow) => {
+    const state = (window as Window & {
+      __E2E_STATE__?: { workflows: unknown[] };
+    }).__E2E_STATE__;
+    if (state) state.workflows = [workflow];
+  }, mockWorkflow);
+
+  await page.goto('/#/editor?id=wf-123');
+  await page.getByRole('button', { name: 'Execute workflow (Cmd+Enter)' }).click();
+
+  const executeCalls = await page.evaluate(() => {
+    const state = (window as Window & {
+      __E2E_STATE__?: {
+        invokeLog: Array<{ cmd: string; args: { workflowId?: string; triggerType?: string } }>;
+      };
+    }).__E2E_STATE__;
+    return (state?.invokeLog ?? []).filter((entry) => entry.cmd === 'execute_workflow');
+  });
+
+  expect(executeCalls).toHaveLength(1);
+  expect(executeCalls[0]?.args?.workflowId).toBe('wf-123');
+  expect(executeCalls[0]?.args?.triggerType).toBe('manual');
 });
