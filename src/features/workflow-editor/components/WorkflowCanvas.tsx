@@ -8,7 +8,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useEditorStore, type WorkflowNode } from '@/features/workflow-editor/stores/editor-store';
-import WorkflowNodeComponent from './nodes/WorkflowNodeComponent';
+import WorkflowNodeComponent from '../nodes/components/WorkflowNodeComponent';
 import { AnimatedEdge } from './edges/AnimatedEdge';
 import type { NodeType } from '@/types/workflow';
 

@@ -1,64 +1,21 @@
 import type { LucideIcon } from 'lucide-react';
-import {
-  Zap,
-  GitFork,
-  Repeat,
-  Timer,
-  RefreshCw,
-  BookOpen,
-  GitPullRequest,
-  FolderTree,
-  GitBranch,
-  GitCommitHorizontal,
-  Search,
-  FileText,
-  Play,
-} from 'lucide-react';
 import type { NodeType } from '@/types/workflow';
-import { NODE_METADATA } from '@/features/workflow-editor/config-schemas';
-
-type Category = 'control' | 'github' | 'git' | 'claude';
+import { NODE_METADATA } from '@/features/workflow-editor/nodes/catalog';
+import { NODE_ICONS } from '@/features/workflow-editor/nodes/icons';
+import {
+  NODE_FEATURES,
+  NODE_PALETTE_ORDER,
+  type NodeFeature,
+} from '@/features/workflow-editor/nodes/features';
 
 interface PaletteItem {
   type: NodeType;
   label: string;
-  category: Category;
+  category: NodeFeature;
   icon: LucideIcon;
 }
 
-const NODE_ICONS: Record<NodeType, LucideIcon> = {
-  trigger: Zap,
-  condition: GitFork,
-  loop: Repeat,
-  delay: Timer,
-  'github.sync': RefreshCw,
-  'github.readIssues': BookOpen,
-  'github.createPR': GitPullRequest,
-  'git.worktree': FolderTree,
-  'git.branch': GitBranch,
-  'git.commit': GitCommitHorizontal,
-  'claude.analyze': Search,
-  'claude.plan': FileText,
-  'claude.apply': Play,
-};
-
-const PALETTE_ORDER: NodeType[] = [
-  'trigger',
-  'condition',
-  'loop',
-  'delay',
-  'github.sync',
-  'github.readIssues',
-  'github.createPR',
-  'git.worktree',
-  'git.branch',
-  'git.commit',
-  'claude.analyze',
-  'claude.plan',
-  'claude.apply',
-];
-
-const PALETTE_ITEMS: PaletteItem[] = PALETTE_ORDER.map((type) => ({
+const PALETTE_ITEMS: PaletteItem[] = NODE_PALETTE_ORDER.map((type) => ({
   type,
   label: NODE_METADATA[type].label,
   category: NODE_METADATA[type].category,
@@ -66,7 +23,6 @@ const PALETTE_ITEMS: PaletteItem[] = PALETTE_ORDER.map((type) => ({
 }));
 
 interface CategoryStyle {
-  label: string;
   headerColor: string;
   iconBg: string;
   cardBg: string;
@@ -74,9 +30,8 @@ interface CategoryStyle {
   cardHover: string;
 }
 
-const CATEGORY_STYLES: Record<Category, CategoryStyle> = {
+const CATEGORY_STYLES: Record<NodeFeature, CategoryStyle> = {
   control: {
-    label: 'Control Flow',
     headerColor: 'text-control-text',
     iconBg: 'bg-control-muted text-control',
     cardBg: 'bg-gradient-to-br from-control-muted to-bg-tertiary',
@@ -84,7 +39,6 @@ const CATEGORY_STYLES: Record<Category, CategoryStyle> = {
     cardHover: 'hover:border-control hover:shadow-node',
   },
   github: {
-    label: 'GitHub',
     headerColor: 'text-github-accent',
     iconBg: 'bg-github-muted text-github-accent',
     cardBg: 'bg-gradient-to-br from-github-muted to-bg-tertiary',
@@ -92,7 +46,6 @@ const CATEGORY_STYLES: Record<Category, CategoryStyle> = {
     cardHover: 'hover:border-github-accent hover:shadow-node',
   },
   git: {
-    label: 'Git',
     headerColor: 'text-git-accent',
     iconBg: 'bg-git-muted text-git',
     cardBg: 'bg-gradient-to-br from-git-muted to-bg-tertiary',
@@ -100,7 +53,6 @@ const CATEGORY_STYLES: Record<Category, CategoryStyle> = {
     cardHover: 'hover:border-git-accent hover:shadow-node',
   },
   claude: {
-    label: 'Claude AI',
     headerColor: 'text-claude-accent',
     iconBg: 'bg-claude-muted text-claude',
     cardBg: 'bg-gradient-to-br from-claude-muted to-bg-tertiary',
@@ -108,8 +60,6 @@ const CATEGORY_STYLES: Record<Category, CategoryStyle> = {
     cardHover: 'hover:border-claude-accent hover:shadow-node',
   },
 };
-
-const CATEGORIES: Category[] = ['control', 'github', 'git', 'claude'];
 
 interface NodePaletteProps {
   onDragStart: (type: NodeType, x: number, y: number) => void;
@@ -125,18 +75,18 @@ export function NodePalette({ onDragStart, onQuickAdd }: NodePaletteProps) {
       <h2 className="font-display text-sm font-semibold text-text-secondary uppercase tracking-widest mb-4 px-1">
         Nodes
       </h2>
-      {CATEGORIES.map((category) => {
-        const style = CATEGORY_STYLES[category];
-        const items = PALETTE_ITEMS.filter((i) => i.category === category);
+      {NODE_FEATURES.map((feature) => {
+        const style = CATEGORY_STYLES[feature.key];
+        const items = PALETTE_ITEMS.filter((i) => i.category === feature.key);
 
         return (
-          <div key={category} className="mb-5">
+          <div key={feature.key} className="mb-5">
             <h3
               className={`font-display text-[11px] font-medium uppercase tracking-widest mb-2 px-1 ${style.headerColor}`}
             >
-              {style.label}
+              {feature.label}
             </h3>
-            <ul className="space-y-1.5" role="list" aria-label={`${style.label} nodes`}>
+            <ul className="space-y-1.5" role="list" aria-label={`${feature.label} nodes`}>
               {items.map((item) => {
                 const Icon = item.icon;
                 return (

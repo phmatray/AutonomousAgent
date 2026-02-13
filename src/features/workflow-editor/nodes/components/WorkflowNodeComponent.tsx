@@ -3,19 +3,6 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { motion } from 'framer-motion';
 import type { LucideIcon } from 'lucide-react';
 import {
-  Zap,
-  GitFork,
-  Repeat,
-  Timer,
-  RefreshCw,
-  BookOpen,
-  GitPullRequest,
-  FolderTree,
-  GitBranch,
-  GitCommitHorizontal,
-  Search,
-  FileText,
-  Play,
   Loader2,
   CheckCircle2,
   XCircle,
@@ -24,9 +11,10 @@ import {
   Check,
   X,
 } from 'lucide-react';
-import type { NodeType } from '@/types/workflow';
 import type { WorkflowNode } from '@/features/workflow-editor/stores/editor-store';
-import { getNodeLabel } from '@/features/workflow-editor/config-schemas';
+import { getNodeLabel } from '@/features/workflow-editor/nodes/catalog';
+import { getNodeFeature, type NodeFeature } from '@/features/workflow-editor/nodes/features';
+import { NODE_ICONS } from '@/features/workflow-editor/nodes/icons';
 
 interface CategoryStyle {
   bg: string;
@@ -36,7 +24,7 @@ interface CategoryStyle {
   headerColor: string;
 }
 
-const CATEGORY_STYLES: Record<string, CategoryStyle> = {
+const CATEGORY_STYLES: Record<NodeFeature, CategoryStyle> = {
   github: {
     bg: 'bg-gradient-to-br from-github-bg to-bg-secondary',
     border: 'border-github-border',
@@ -67,22 +55,6 @@ const CATEGORY_STYLES: Record<string, CategoryStyle> = {
   },
 };
 
-const NODE_ICONS: Record<NodeType, LucideIcon> = {
-  trigger: Zap,
-  condition: GitFork,
-  loop: Repeat,
-  delay: Timer,
-  'github.sync': RefreshCw,
-  'github.readIssues': BookOpen,
-  'github.createPR': GitPullRequest,
-  'git.worktree': FolderTree,
-  'git.branch': GitBranch,
-  'git.commit': GitCommitHorizontal,
-  'claude.analyze': Search,
-  'claude.plan': FileText,
-  'claude.apply': Play,
-};
-
 type ExecutionStatus = 'idle' | 'running' | 'completed' | 'error' | 'scheduled';
 
 const EXECUTION_STYLES: Record<ExecutionStatus, { borderClass: string; cssAnimation: string; icon: LucideIcon; color: string; animate?: string }> = {
@@ -92,13 +64,6 @@ const EXECUTION_STYLES: Record<ExecutionStatus, { borderClass: string; cssAnimat
   completed: { borderClass: 'border-state-success', cssAnimation: '', icon: CheckCircle2, color: 'text-state-success' },
   error: { borderClass: 'border-state-error', cssAnimation: '', icon: XCircle, color: 'text-state-error' },
 };
-
-function getCategory(nodeType: NodeType): string {
-  if (nodeType.startsWith('github.')) return 'github';
-  if (nodeType.startsWith('git.')) return 'git';
-  if (nodeType.startsWith('claude.')) return 'claude';
-  return 'control';
-}
 
 function getConfigSummary(config: Record<string, unknown>): string | null {
   const entries = Object.entries(config).filter(([, v]) => v !== '' && v !== null && v !== undefined);
@@ -112,7 +77,7 @@ function getConfigSummary(config: Record<string, unknown>): string | null {
 
 function WorkflowNodeComponent({ data, selected, dragging }: NodeProps<WorkflowNode>) {
   const [hasAppeared, setHasAppeared] = useState(false);
-  const category = getCategory(data.nodeType);
+  const category = getNodeFeature(data.nodeType);
   const style = CATEGORY_STYLES[category];
   const NodeIcon = NODE_ICONS[data.nodeType] ?? Circle;
   const execStatus = (data.executionStatus ?? 'idle') as ExecutionStatus;

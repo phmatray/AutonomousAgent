@@ -11,7 +11,7 @@ import {
   type Connection,
 } from '@xyflow/react';
 import type { NodeType } from '@/types/workflow';
-import { getNodeLabel, NODE_SCHEMAS } from '@/features/workflow-editor/config-schemas';
+import { getNodeLabel, NODE_SCHEMAS } from '@/features/workflow-editor/nodes/catalog';
 import type { TemplateVariable } from '@/components/ui/form';
 
 interface NodeData extends Record<string, unknown> {

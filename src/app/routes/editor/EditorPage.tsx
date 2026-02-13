@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { useMachine } from '@xstate/react';
 import { WorkflowCanvas } from '@/features/workflow-editor/components/WorkflowCanvas';
-import { NodePalette } from '@/features/workflow-editor/components/NodePalette';
-import { NodeConfigPanel } from '@/features/workflow-editor/components/NodeConfigPanel';
+import { NodePalette } from '@/features/workflow-editor/nodes/components/NodePalette';
+import { NodeConfigPanel } from '@/features/workflow-editor/nodes/components/NodeConfigPanel';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useEditorStore } from '@/features/workflow-editor/stores/editor-store';
 import {
@@ -21,7 +21,7 @@ import { editorDomainMachine } from './editor-domain-machine';
 import { parseImportedWorkflow, serializeWorkflowForExport, toEditorGraph } from './workflow-io';
 import { WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
 import type { NodeType, Workflow, WorkflowPreflightIssue } from '@/types/workflow';
-import { getNodeLabel } from '@/features/workflow-editor/config-schemas';
+import { getNodeLabel } from '@/features/workflow-editor/nodes/catalog';
 
 interface DragState {
   type: NodeType;

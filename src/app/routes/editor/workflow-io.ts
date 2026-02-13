@@ -1,5 +1,5 @@
 import type { NodeType, Workflow } from '@/types/workflow';
-import { getNodeLabel } from '@/features/workflow-editor/config-schemas';
+import { getNodeLabel } from '@/features/workflow-editor/nodes/catalog';
 
 export const WORKFLOW_EXPORT_SCHEMA_VERSION = 1;
 

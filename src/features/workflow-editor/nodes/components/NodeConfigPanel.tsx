@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useEditorStore } from '@/features/workflow-editor/stores/editor-store';
-import { getNodeLabel, getNodeSchema, type FieldSchema } from '@/features/workflow-editor/config-schemas';
+import { getNodeLabel, getNodeSchema, type FieldSchema } from '@/features/workflow-editor/nodes/catalog';
 import { listGitHubCredentials } from '@/lib/api/github';
 import {
   TextInput,

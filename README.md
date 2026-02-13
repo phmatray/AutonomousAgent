@@ -215,6 +215,7 @@ The frontend communicates with the backend via Tauri's invoke system. All 23 reg
 13 node types organized into 4 categories:
 
 Detailed standardized node documentation is available in [docs/nodes/README.md](docs/nodes/README.md).
+Editor node feature files are organized in [src/features/workflow-editor/nodes/README.md](src/features/workflow-editor/nodes/README.md).
 
 **GitHub Nodes:**
 - `github.sync` - Clone or pull a repository
