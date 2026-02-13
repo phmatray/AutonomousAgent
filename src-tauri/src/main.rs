@@ -104,6 +104,8 @@ fn main() {
             commands::github::list_issues,
             commands::github::create_pull_request,
             commands::github::get_auth_status,
+            commands::github::get_saved_github_token,
+            commands::github::delete_github_token,
             // Claude commands
             commands::claude::execute_plan,
             commands::claude::cancel_execution,

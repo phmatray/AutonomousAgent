@@ -118,10 +118,20 @@ export function installWebDriverTauriMock() {
     }
 
     if (cmd === 'get_auth_status') return state.auth;
+    if (cmd === 'get_saved_github_token') {
+      return {
+        token: state.auth?.authenticated ? 'ghp_e2e_savedtoken' : null,
+      };
+    }
 
     if (cmd === 'authenticate_github') {
       state.auth = { authenticated: true, username: 'e2e-user' };
       return { success: true, username: 'e2e-user' };
+    }
+
+    if (cmd === 'delete_github_token') {
+      state.auth = { authenticated: false };
+      return null;
     }
 
     if (cmd === 'list_github_credentials') {

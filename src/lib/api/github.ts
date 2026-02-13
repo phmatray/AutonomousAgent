@@ -71,3 +71,12 @@ export async function getAuthStatus(): Promise<{
 }> {
   return invoke('get_auth_status');
 }
+
+export async function getSavedGitHubToken(): Promise<string> {
+  const response = await invoke<{ token: string | null }>('get_saved_github_token');
+  return response.token ?? '';
+}
+
+export async function deleteGitHubToken(): Promise<void> {
+  return invoke<void>('delete_github_token');
+}

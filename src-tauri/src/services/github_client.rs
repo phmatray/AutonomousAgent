@@ -95,6 +95,11 @@ impl GitHubClient {
             .ok_or_else(|| AppError::Authentication("Not authenticated".to_string()))
     }
 
+    pub async fn clear_authentication(&self) {
+        *self.client.write().await = None;
+        *self.authenticated_user.write().await = None;
+    }
+
     async fn get_client(&self) -> Result<Octocrab> {
         self.client
             .read()

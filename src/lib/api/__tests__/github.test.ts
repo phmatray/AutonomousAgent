@@ -5,7 +5,9 @@ import {
   listRepositories,
   listIssues,
   createPullRequest,
+  deleteGitHubToken,
   getAuthStatus,
+  getSavedGitHubToken,
 } from '@/lib/api/github';
 import type { AuthResult, GitHubRepo, GitHubIssue, GitHubPR } from '@/lib/api/github';
 
@@ -191,6 +193,51 @@ describe('github API', () => {
       mockInvoke.mockRejectedValueOnce(new Error('Keyring access denied'));
 
       await expect(getAuthStatus()).rejects.toThrow('Keyring access denied');
+    });
+  });
+
+  describe('getSavedGitHubToken', () => {
+    it('returns stored token when present', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        token: 'ghp_savedtoken123',
+      });
+
+      const result = await getSavedGitHubToken();
+
+      expect(mockInvoke).toHaveBeenCalledWith('get_saved_github_token');
+      expect(result).toBe('ghp_savedtoken123');
+    });
+
+    it('returns empty string when no token is stored', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        token: null,
+      });
+
+      const result = await getSavedGitHubToken();
+
+      expect(result).toBe('');
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('Storage unavailable'));
+
+      await expect(getSavedGitHubToken()).rejects.toThrow('Storage unavailable');
+    });
+  });
+
+  describe('deleteGitHubToken', () => {
+    it('calls invoke with delete command', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await deleteGitHubToken();
+
+      expect(mockInvoke).toHaveBeenCalledWith('delete_github_token');
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('Delete failed'));
+
+      await expect(deleteGitHubToken()).rejects.toThrow('Delete failed');
     });
   });
 });

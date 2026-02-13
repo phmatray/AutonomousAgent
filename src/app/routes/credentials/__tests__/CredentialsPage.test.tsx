@@ -1,0 +1,125 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { CredentialsPage } from '@/app/routes/credentials/CredentialsPage';
+import { mockInvoke } from '@/test/mocks/tauri';
+
+const GITHUB_TOKEN_AUTOFILL_STORAGE_KEY = 'credentials.github.token_autofill';
+
+function installLocalStorageMock(initial: Record<string, string> = {}) {
+  const store = new Map<string, string>(Object.entries(initial));
+
+  const localStorageMock = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+  };
+
+  Object.defineProperty(window, 'localStorage', {
+    value: localStorageMock,
+    configurable: true,
+  });
+}
+
+function mockCredentialCommands(options?: {
+  savedToken?: string | null;
+  savedTokenError?: Error;
+}) {
+  mockInvoke.mockImplementation((cmd: string) => {
+    if (cmd === 'get_auth_status') {
+      return Promise.resolve({ authenticated: false });
+    }
+    if (cmd === 'get_claude_credential_status') {
+      return Promise.resolve({ configured: false, account_label: null });
+    }
+    if (cmd === 'get_saved_github_token') {
+      if (options?.savedTokenError) {
+        return Promise.reject(options.savedTokenError);
+      }
+      return Promise.resolve({ token: options?.savedToken ?? null });
+    }
+    if (cmd === 'authenticate_github') {
+      return Promise.resolve({ success: true, username: 'test-user' });
+    }
+    if (cmd === 'delete_github_token') {
+      return Promise.resolve(null);
+    }
+    if (cmd === 'save_claude_credential') {
+      return Promise.resolve({ configured: true, account_label: null });
+    }
+
+    throw new Error(`Unhandled command: ${cmd}`);
+  });
+}
+
+describe('CredentialsPage', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    installLocalStorageMock({
+      [GITHUB_TOKEN_AUTOFILL_STORAGE_KEY]: 'true',
+    });
+  });
+
+  it('restores a saved GitHub token on load', async () => {
+    mockCredentialCommands({ savedToken: 'ghp_savedtoken123' });
+
+    render(<CredentialsPage />);
+
+    const input = screen.getByLabelText('Personal Access Token');
+    await waitFor(() => {
+      expect(input).toHaveValue('ghp_savedtoken123');
+    });
+  });
+
+  it('keeps token input empty when restore fails', async () => {
+    mockCredentialCommands({ savedTokenError: new Error('storage unavailable') });
+
+    render(<CredentialsPage />);
+
+    const input = screen.getByLabelText('Personal Access Token');
+    await waitFor(() => {
+      expect(input).toBeInTheDocument();
+    });
+    expect(input).toHaveValue('');
+  });
+
+  it('does not restore token when auto-fill is disabled', async () => {
+    installLocalStorageMock({
+      [GITHUB_TOKEN_AUTOFILL_STORAGE_KEY]: 'false',
+    });
+    mockCredentialCommands({ savedToken: 'ghp_savedtoken123' });
+
+    render(<CredentialsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Personal Access Token')).toBeInTheDocument();
+    });
+
+    const calledRestore = mockInvoke.mock.calls.some(([cmd]) => cmd === 'get_saved_github_token');
+    expect(calledRestore).toBe(false);
+    expect(screen.getByLabelText('Personal Access Token')).toHaveValue('');
+  });
+
+  it('restores token after re-enabling auto-fill', async () => {
+    const user = userEvent.setup();
+    installLocalStorageMock({
+      [GITHUB_TOKEN_AUTOFILL_STORAGE_KEY]: 'false',
+    });
+    mockCredentialCommands({ savedToken: 'ghp_savedtoken123' });
+
+    render(<CredentialsPage />);
+
+    const checkbox = screen.getByRole('checkbox', {
+      name: 'Auto-fill saved token on page open',
+    });
+
+    expect(checkbox).not.toBeChecked();
+    await user.click(checkbox);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Personal Access Token')).toHaveValue('ghp_savedtoken123');
+    });
+    expect(window.localStorage.getItem(GITHUB_TOKEN_AUTOFILL_STORAGE_KEY)).toBe('true');
+  });
+});

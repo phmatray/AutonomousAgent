@@ -214,3 +214,19 @@ pub async fn get_auth_status(state: State<'_, AppState>) -> Result<serde_json::V
         })),
     }
 }
+
+#[tauri::command]
+pub async fn get_saved_github_token(state: State<'_, AppState>) -> Result<serde_json::Value> {
+    let token = state.storage.get_github_token().await.ok();
+
+    Ok(serde_json::json!({
+        "token": token
+    }))
+}
+
+#[tauri::command]
+pub async fn delete_github_token(state: State<'_, AppState>) -> Result<()> {
+    state.storage.delete_all_github_credentials().await?;
+    state.github.clear_authentication().await;
+    Ok(())
+}

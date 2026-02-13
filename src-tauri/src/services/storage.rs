@@ -535,6 +535,42 @@ impl StorageService {
         Ok(())
     }
 
+    pub async fn delete_all_github_credentials(&self) -> Result<()> {
+        let pool = self.db_pool().await?;
+        sqlx::query(
+            "DELETE FROM config
+             WHERE key = ?
+             OR key = ?
+             OR key LIKE ?",
+        )
+        .bind(DB_KEY_GITHUB_CREDENTIAL_INDEX)
+        .bind(DB_KEY_GITHUB_LEGACY_TOKEN)
+        .bind("credentials.github.token.%")
+        .execute(&pool)
+        .await?;
+
+        // Best-effort cleanup for legacy keyring entries.
+        let legacy_default_entry = keyring::Entry::new(SERVICE_NAME, GITHUB_TOKEN_KEY)?;
+        let _ = legacy_default_entry.delete_credential();
+
+        let index_entry = keyring::Entry::new(SERVICE_NAME, GITHUB_CREDENTIAL_INDEX_KEY)?;
+        if let Ok(raw_index) = index_entry.get_password() {
+            if let Ok(legacy_credentials) =
+                serde_json::from_str::<Vec<GitHubCredential>>(&raw_index)
+            {
+                for credential in legacy_credentials {
+                    let legacy_key = Self::legacy_token_key_for_credential(&credential.id);
+                    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, &legacy_key) {
+                        let _ = entry.delete_credential();
+                    }
+                }
+            }
+        }
+        let _ = index_entry.delete_credential();
+
+        Ok(())
+    }
+
     pub async fn has_github_token(&self) -> bool {
         self.get_github_token().await.is_ok()
     }

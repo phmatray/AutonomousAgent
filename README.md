@@ -216,7 +216,7 @@ For a detailed architecture overview, see [docs/ARCHITECTURE.md](docs/ARCHITECTU
 
 ### Tauri IPC Commands
 
-The frontend communicates with the backend via Tauri's invoke system. The app currently exposes 34 registered commands:
+The frontend communicates with the backend via Tauri's invoke system. The app currently exposes 40 registered commands:
 
 | Category | Command | Description |
 |----------|---------|-------------|
@@ -227,6 +227,7 @@ The frontend communicates with the backend via Tauri's invoke system. The app cu
 | | `delete_workflow` | Delete workflow |
 | | `preflight_workflow` | Validate workflow before execution |
 | | `execute_workflow` | Execute a workflow |
+| | `cancel_workflow_execution` | Cancel a running execution |
 | | `list_executions` | List execution history |
 | | `get_execution_logs` | Get logs for an execution |
 | | `copy_debug_bundle` | Export execution debug bundle |
@@ -236,9 +237,13 @@ The frontend communicates with the backend via Tauri's invoke system. The app cu
 | | `list_issues` | List repository issues |
 | | `create_pull_request` | Create a PR |
 | | `get_auth_status` | Check authentication status |
+| | `get_saved_github_token` | Read saved token for credentials UI restore |
+| | `delete_github_token` | Remove all saved GitHub credentials |
 | **Claude** | `execute_plan` | Run Claude CLI prompt |
 | | `cancel_execution` | Cancel running execution |
 | | `list_running_executions` | List active executions |
+| | `get_claude_credential_status` | Read Claude credential configuration status |
+| | `save_claude_credential` | Save Claude API key and optional account label |
 | **Git** | `git_status` | Repository status |
 | | `git_log` | Commit history |
 | | `git_diff` | Diff summary |
@@ -252,6 +257,7 @@ The frontend communicates with the backend via Tauri's invoke system. The app cu
 | **Backlog** | `list_backlog_items` | List backlog items |
 | | `sync_github_issues_to_backlog` | Sync GitHub issues into backlog |
 | | `link_backlog_to_workflow` | Link a backlog item to a workflow |
+| | `create_linked_workflow_from_backlog` | Create a workflow linked to a backlog item |
 | | `delete_backlog_item` | Delete backlog item |
 | **System** | `is_initialized` | Check app initialization status |
 
@@ -307,7 +313,7 @@ SQLite database with 5 tables:
 
 - GitHub tokens stored securely in OS keyring (macOS Keychain, Windows Credential Manager)
 - Automatic session restoration from keyring on startup
-- No token exposure to the frontend webview
+- Token retrieval to the frontend is limited to the Credentials page restore flow
 - Input validation on all Tauri commands
 - Claude CLI runs in subprocess with configurable timeout
 

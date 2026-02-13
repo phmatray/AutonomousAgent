@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { authenticateGitHub, getAuthStatus } from '@/lib/api/github';
+import {
+  authenticateGitHub,
+  deleteGitHubToken,
+  getAuthStatus,
+  getSavedGitHubToken,
+} from '@/lib/api/github';
 import {
   getClaudeCredentialStatus,
   saveClaudeCredential,
@@ -13,6 +18,21 @@ interface GitHubAuthStatus {
 }
 
 type SaveState = 'idle' | 'success' | 'error';
+const GITHUB_TOKEN_AUTOFILL_STORAGE_KEY = 'credentials.github.token_autofill';
+
+function getBrowserStorage(): Pick<Storage, 'getItem' | 'setItem'> | null {
+  const storage = window.localStorage as Partial<Storage> | undefined;
+  if (!storage) return null;
+  if (typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') {
+    return null;
+  }
+  return storage as Pick<Storage, 'getItem' | 'setItem'>;
+}
+
+function getInitialGitHubTokenAutofill(): boolean {
+  const raw = getBrowserStorage()?.getItem(GITHUB_TOKEN_AUTOFILL_STORAGE_KEY);
+  return raw !== 'false';
+}
 
 export function CredentialsPage() {
   const [githubStatus, setGithubStatus] = useState<GitHubAuthStatus | null>(null);
@@ -21,8 +41,13 @@ export function CredentialsPage() {
 
   const [githubToken, setGithubToken] = useState('');
   const [showGithubToken, setShowGithubToken] = useState(false);
+  const [isGithubTokenAutofillEnabled, setIsGithubTokenAutofillEnabled] = useState(
+    getInitialGitHubTokenAutofill,
+  );
   const [isSavingGithub, setIsSavingGithub] = useState(false);
   const [githubSaveState, setGithubSaveState] = useState<SaveState>('idle');
+  const [isDeletingGithub, setIsDeletingGithub] = useState(false);
+  const [githubDeleteState, setGithubDeleteState] = useState<SaveState>('idle');
 
   const [claudeStatus, setClaudeStatus] = useState<ClaudeCredentialStatus | null>(null);
   const [claudeStatusError, setClaudeStatusError] = useState(false);
@@ -63,15 +88,39 @@ export function CredentialsPage() {
     }
   }, []);
 
+  const restoreGitHubToken = useCallback(async () => {
+    if (!isGithubTokenAutofillEnabled) {
+      setGithubToken('');
+      return;
+    }
+
+    try {
+      const token = await getSavedGitHubToken();
+      setGithubToken(token);
+    } catch {
+      // Keep token field empty if secure storage cannot be read.
+    }
+  }, [isGithubTokenAutofillEnabled]);
+
   useEffect(() => {
     void Promise.all([refreshGitHubStatus(), refreshClaudeStatus()]);
   }, [refreshGitHubStatus, refreshClaudeStatus]);
+
+  useEffect(() => {
+    void restoreGitHubToken();
+  }, [restoreGitHubToken]);
 
   useEffect(() => {
     if (githubSaveState === 'idle') return;
     const timer = setTimeout(() => setGithubSaveState('idle'), 3000);
     return () => clearTimeout(timer);
   }, [githubSaveState]);
+
+  useEffect(() => {
+    if (githubDeleteState === 'idle') return;
+    const timer = setTimeout(() => setGithubDeleteState('idle'), 3000);
+    return () => clearTimeout(timer);
+  }, [githubDeleteState]);
 
   useEffect(() => {
     if (claudeSaveState === 'idle') return;
@@ -90,7 +139,7 @@ export function CredentialsPage() {
 
     try {
       await authenticateGitHub(token);
-      setGithubToken('');
+      setGithubToken(token);
       setShowGithubToken(false);
       setGithubSaveState('success');
       await refreshGitHubStatus();
@@ -98,6 +147,33 @@ export function CredentialsPage() {
       setGithubSaveState('error');
     } finally {
       setIsSavingGithub(false);
+    }
+  };
+
+  const handleGitHubTokenAutofillToggle = (enabled: boolean) => {
+    setIsGithubTokenAutofillEnabled(enabled);
+    getBrowserStorage()?.setItem(GITHUB_TOKEN_AUTOFILL_STORAGE_KEY, String(enabled));
+    if (!enabled) {
+      setGithubToken('');
+      setShowGithubToken(false);
+    }
+  };
+
+  const handleDeleteGitHubToken = async () => {
+    setIsDeletingGithub(true);
+    setGithubDeleteState('idle');
+
+    try {
+      await deleteGitHubToken();
+      setGithubToken('');
+      setShowGithubToken(false);
+      setGithubSaveState('idle');
+      setGithubDeleteState('success');
+      await refreshGitHubStatus();
+    } catch {
+      setGithubDeleteState('error');
+    } finally {
+      setIsDeletingGithub(false);
     }
   };
 
@@ -196,6 +272,15 @@ export function CredentialsPage() {
             <p id="github-token-help" className="text-xs text-gray-400 mt-1">
               Required scopes: repo, workflow.
             </p>
+            <label className="inline-flex items-center gap-2 text-xs text-gray-300 mt-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isGithubTokenAutofillEnabled}
+                onChange={(event) => handleGitHubTokenAutofillToggle(event.target.checked)}
+                className="h-4 w-4 rounded border-gray-600 bg-gray-900 text-indigo-600 focus:ring-indigo-500"
+              />
+              Auto-fill saved token on page open
+            </label>
           </div>
 
           <div className="flex items-center gap-3">
@@ -206,6 +291,14 @@ export function CredentialsPage() {
             >
               {isSavingGithub ? 'Saving...' : 'Save GitHub Token'}
             </button>
+            <button
+              type="button"
+              onClick={() => void handleDeleteGitHubToken()}
+              disabled={isDeletingGithub}
+              className="px-4 py-2 bg-gray-700 text-white text-sm rounded hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gray-500"
+            >
+              {isDeletingGithub ? 'Removing...' : 'Remove Saved Token'}
+            </button>
 
             {githubSaveState === 'success' ? (
               <span className="text-sm text-green-400" role="status" aria-live="polite">
@@ -215,6 +308,16 @@ export function CredentialsPage() {
             {githubSaveState === 'error' ? (
               <span className="text-sm text-red-400" role="alert">
                 Failed to save GitHub token
+              </span>
+            ) : null}
+            {githubDeleteState === 'success' ? (
+              <span className="text-sm text-green-400" role="status" aria-live="polite">
+                GitHub token removed
+              </span>
+            ) : null}
+            {githubDeleteState === 'error' ? (
+              <span className="text-sm text-red-400" role="alert">
+                Failed to remove GitHub token
               </span>
             ) : null}
           </div>
