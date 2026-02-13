@@ -165,6 +165,12 @@ Run frontend end-to-end tests (Tauri WebDriver):
 npm run test:e2e
 ```
 
+Run the fast WebDriver smoke subset (used in CI):
+
+```bash
+npm run test:e2e:smoke
+```
+
 Run frontend coverage:
 
 ```bash
@@ -176,6 +182,12 @@ Run Rust coverage (first-time setup + summary):
 ```bash
 npm run coverage:rust:setup
 npm run coverage:rust:summary
+```
+
+Generate Rust lcov output for Codecov-compatible reports:
+
+```bash
+npm run coverage:rust
 ```
 
 Prerequisites:
