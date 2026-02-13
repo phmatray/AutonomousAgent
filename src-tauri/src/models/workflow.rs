@@ -11,6 +11,7 @@ pub struct Workflow {
     pub nodes: Vec<WorkflowNode>,
     pub edges: Vec<WorkflowEdge>,
     pub config: Option<serde_json::Value>,
+    pub schedule: Option<WorkflowSchedule>,
     pub version: i32,
     pub created_at: String,
     pub updated_at: String,
@@ -45,6 +46,17 @@ pub struct WorkflowEdge {
     pub target: String,
     pub source_handle: Option<String>,
     pub target_handle: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowSchedule {
+    pub trigger_type: String,
+    pub cron_expression: Option<String>,
+    pub timezone: Option<String>,
+    pub enabled: bool,
+    pub last_run_at: Option<String>,
+    pub next_run_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +114,7 @@ mod tests {
         assert_eq!(workflow.status, "draft");
         assert_eq!(workflow.nodes[0].node_type, "trigger");
         assert_eq!(workflow.edges[0].source_handle.as_deref(), Some("true"));
+        assert!(workflow.schedule.is_none());
         assert_eq!(workflow.created_at, "2026-02-13T10:00:00Z");
         assert_eq!(workflow.updated_at, "2026-02-13T10:00:00Z");
     }

@@ -40,6 +40,23 @@ const mockWorkflow2: Workflow = {
   updatedAt: '2026-01-15T00:00:00Z',
 };
 
+const mockCronWorkflow: Workflow = {
+  id: 'wf-3',
+  name: 'Nightly Sync',
+  schedule: {
+    triggerType: 'cron',
+    cronExpression: '0 2 * * *',
+    timezone: 'UTC',
+    enabled: true,
+    nextRunAt: '2026-02-14T02:00:00Z',
+  },
+  nodes: [{ id: 'n1', type: 'trigger.cron', config: { schedule: '0 2 * * *', timezone: 'UTC' } }],
+  edges: [],
+  version: 1,
+  createdAt: '2026-01-20T00:00:00Z',
+  updatedAt: '2026-01-20T00:00:00Z',
+};
+
 function renderWithQueryClient(ui: React.ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -86,7 +103,7 @@ describe('DashboardPage', () => {
       expect(screen.getByText('No workflows yet')).toBeInTheDocument();
     });
     expect(
-      screen.getByText(/Create your first autonomous workflow/),
+      screen.getByText(/Create your first scheduled or on-demand workflow/),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create Workflow' })).toBeInTheDocument();
   });
@@ -170,6 +187,19 @@ describe('DashboardPage', () => {
     });
   });
 
+  it('renders trigger mode details for scheduler context', async () => {
+    mockInvoke.mockResolvedValueOnce([mockWorkflow1, mockCronWorkflow]);
+    renderWithQueryClient(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('On demand')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Cron schedule')).toBeInTheDocument();
+    expect(screen.getByText(/Schedule:/)).toBeInTheDocument();
+    expect(screen.getByText(/0 2 \* \* \*/)).toBeInTheDocument();
+    expect(screen.getByText(/Next run:/)).toBeInTheDocument();
+  });
+
   // ------------------------------------------------------------------
   // Navigation / interactions
   // ------------------------------------------------------------------
@@ -190,9 +220,9 @@ describe('DashboardPage', () => {
     renderWithQueryClient(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('Workflows')).toBeInTheDocument();
+      expect(screen.getByText('Workflow Scheduler')).toBeInTheDocument();
     });
-    expect(screen.getByText('Manage your autonomous development workflows')).toBeInTheDocument();
+    expect(screen.getByText('Manage scheduled and on-demand workflow automations')).toBeInTheDocument();
   });
 
   // ------------------------------------------------------------------

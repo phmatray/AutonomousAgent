@@ -338,6 +338,7 @@ fn build_linked_workflow(backlog_item: &BacklogItem, guidelines_markdown: &str) 
             },
             "resolution_guidelines_markdown": guidelines_markdown,
         })),
+        schedule: None,
         version: 1,
         created_at: now.clone(),
         updated_at: now,

@@ -54,6 +54,15 @@ export interface WorkflowSettings {
   errorHandling?: 'stop' | 'continue' | 'retry';
 }
 
+export interface WorkflowSchedule {
+  triggerType: string;
+  cronExpression?: string;
+  timezone?: string;
+  enabled: boolean;
+  lastRunAt?: string;
+  nextRunAt?: string;
+}
+
 export interface Workflow {
   id: string;
   name: string;
@@ -62,6 +71,7 @@ export interface Workflow {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   config?: Record<string, any>;
+  schedule?: WorkflowSchedule;
   settings?: WorkflowSettings;
   version: number;
   createdAt: string;

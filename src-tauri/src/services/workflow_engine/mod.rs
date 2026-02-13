@@ -6,7 +6,7 @@ pub mod scheduler;
 pub mod state_machine;
 
 use crate::errors::{AppError, Result};
-use crate::models::workflow::{Workflow, WorkflowExecution};
+use crate::models::workflow::{Workflow, WorkflowExecution, WorkflowSchedule};
 use executor::{RetryPolicy, WorkflowExecutionResult};
 use node_registry::{build_default_registry, ClaudeProvider, NodeRegistry, ServiceProvider};
 use preflight::WorkflowPreflightResult;
@@ -98,7 +98,26 @@ impl WorkflowEngine {
     pub async fn list_workflows(&self) -> Result<Vec<Workflow>> {
         let pool = self.get_pool().await?;
         let rows = sqlx::query_as::<_, WorkflowRow>(
-            "SELECT id, name, description, status, nodes, edges, config, version, created_at, updated_at FROM workflows ORDER BY updated_at DESC",
+            "SELECT
+                w.id,
+                w.name,
+                w.description,
+                w.status,
+                w.nodes,
+                w.edges,
+                w.config,
+                w.version,
+                w.created_at,
+                w.updated_at,
+                ws.trigger_type AS schedule_trigger_type,
+                ws.cron_expression AS schedule_cron_expression,
+                ws.timezone AS schedule_timezone,
+                ws.enabled AS schedule_enabled,
+                ws.last_run_at AS schedule_last_run_at,
+                ws.next_run_at AS schedule_next_run_at
+             FROM workflows w
+             LEFT JOIN workflow_schedules ws ON ws.workflow_id = w.id
+             ORDER BY w.updated_at DESC",
         )
         .fetch_all(&pool)
         .await?;
@@ -109,7 +128,26 @@ impl WorkflowEngine {
     pub async fn get_workflow(&self, id: &str) -> Result<Option<Workflow>> {
         let pool = self.get_pool().await?;
         let row = sqlx::query_as::<_, WorkflowRow>(
-            "SELECT id, name, description, status, nodes, edges, config, version, created_at, updated_at FROM workflows WHERE id = ?",
+            "SELECT
+                w.id,
+                w.name,
+                w.description,
+                w.status,
+                w.nodes,
+                w.edges,
+                w.config,
+                w.version,
+                w.created_at,
+                w.updated_at,
+                ws.trigger_type AS schedule_trigger_type,
+                ws.cron_expression AS schedule_cron_expression,
+                ws.timezone AS schedule_timezone,
+                ws.enabled AS schedule_enabled,
+                ws.last_run_at AS schedule_last_run_at,
+                ws.next_run_at AS schedule_next_run_at
+             FROM workflows w
+             LEFT JOIN workflow_schedules ws ON ws.workflow_id = w.id
+             WHERE w.id = ?",
         )
         .bind(id)
         .fetch_optional(&pool)
@@ -779,6 +817,12 @@ struct WorkflowRow {
     version: i32,
     created_at: String,
     updated_at: String,
+    schedule_trigger_type: Option<String>,
+    schedule_cron_expression: Option<String>,
+    schedule_timezone: Option<String>,
+    schedule_enabled: Option<i64>,
+    schedule_last_run_at: Option<String>,
+    schedule_next_run_at: Option<String>,
 }
 
 impl WorkflowRow {
@@ -786,6 +830,19 @@ impl WorkflowRow {
         let nodes = serde_json::from_str(&self.nodes)?;
         let edges = serde_json::from_str(&self.edges)?;
         let config = self.config.map(|c| serde_json::from_str(&c)).transpose()?;
+        let schedule = self
+            .schedule_trigger_type
+            .map(|trigger_type| WorkflowSchedule {
+                trigger_type,
+                cron_expression: self.schedule_cron_expression,
+                timezone: self.schedule_timezone,
+                enabled: self
+                    .schedule_enabled
+                    .map(|value| value != 0)
+                    .unwrap_or(true),
+                last_run_at: self.schedule_last_run_at,
+                next_run_at: self.schedule_next_run_at,
+            });
 
         Ok(Workflow {
             id: self.id,
@@ -795,6 +852,7 @@ impl WorkflowRow {
             nodes,
             edges,
             config,
+            schedule,
             version: self.version,
             created_at: self.created_at,
             updated_at: self.updated_at,

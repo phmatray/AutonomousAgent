@@ -1,5 +1,5 @@
 import { useRouter } from '@/lib/router';
-import { Trash2 } from 'lucide-react';
+import { Clock3, PlayCircle, Trash2 } from 'lucide-react';
 import type { Workflow } from '@/types/workflow';
 import { useEffect, useMemo, useState } from 'react';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -9,6 +9,16 @@ import { executeWorkflow, updateWorkflow } from '@/lib/api/workflow';
 
 type SortOption = 'updated-desc' | 'name-asc' | 'name-desc' | 'nodes-desc';
 type WorkflowStatus = 'draft' | 'published';
+type TriggerMode = 'manual' | 'cron' | 'webhook' | 'state' | 'unknown';
+
+interface TriggerDetails {
+  mode: TriggerMode;
+  label: string;
+  isScheduled: boolean;
+  schedule?: string;
+  timezone?: string;
+  nextRunAt?: string;
+}
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
@@ -32,6 +42,145 @@ function getWorkflowStatus(workflow: Workflow): WorkflowStatus {
   return 'draft';
 }
 
+function getWorkflowTriggerDetails(workflow: Workflow): TriggerDetails {
+  const persistedSchedule = workflow.schedule;
+  if (persistedSchedule?.triggerType) {
+    const triggerType = persistedSchedule.triggerType.toLowerCase();
+    if (triggerType === 'cron') {
+      return {
+        mode: 'cron',
+        label: 'Cron schedule',
+        isScheduled: true,
+        schedule: persistedSchedule.cronExpression,
+        timezone: persistedSchedule.timezone,
+        nextRunAt: persistedSchedule.nextRunAt,
+      };
+    }
+    if (triggerType === 'webhook') {
+      return {
+        mode: 'webhook',
+        label: 'Webhook trigger',
+        isScheduled: false,
+      };
+    }
+    if (triggerType === 'state_idle') {
+      return {
+        mode: 'state',
+        label: 'State trigger',
+        isScheduled: false,
+      };
+    }
+    if (triggerType === 'manual') {
+      return {
+        mode: 'manual',
+        label: 'On demand',
+        isScheduled: false,
+      };
+    }
+  }
+
+  const triggerNode = workflow.nodes.find(
+    (node) => node.type === 'trigger.cron' || node.type === 'trigger',
+  );
+
+  if (!triggerNode) {
+    return {
+      mode: 'manual',
+      label: 'On demand',
+      isScheduled: false,
+    };
+  }
+
+  const config = triggerNode.config as Record<string, unknown> | undefined;
+  const schedule = typeof config?.schedule === 'string' ? config.schedule.trim() : '';
+  const timezone = typeof config?.timezone === 'string' ? config.timezone.trim() : '';
+
+  if (triggerNode.type === 'trigger.cron') {
+    return {
+      mode: 'cron',
+      label: 'Cron schedule',
+      isScheduled: true,
+      schedule: schedule || undefined,
+      timezone: timezone || undefined,
+    };
+  }
+
+  const triggerTypeRaw = typeof config?.trigger_type === 'string'
+    ? config.trigger_type.trim().toLowerCase()
+    : 'manual';
+  const mode = (['manual', 'cron', 'webhook', 'state'].includes(triggerTypeRaw)
+    ? triggerTypeRaw
+    : 'unknown') as TriggerMode;
+
+  if (mode === 'cron') {
+    return {
+      mode,
+      label: 'Cron schedule',
+      isScheduled: true,
+      schedule: schedule || undefined,
+      timezone: timezone || undefined,
+    };
+  }
+
+  if (mode === 'webhook') {
+    return {
+      mode,
+      label: 'Webhook trigger',
+      isScheduled: false,
+    };
+  }
+
+  if (mode === 'state') {
+    return {
+      mode,
+      label: 'State trigger',
+      isScheduled: false,
+    };
+  }
+
+  if (mode === 'unknown') {
+    return {
+      mode,
+      label: 'Custom trigger',
+      isScheduled: false,
+    };
+  }
+
+  return {
+    mode: 'manual',
+    label: 'On demand',
+    isScheduled: false,
+  };
+}
+
+function formatNextRunTimestamp(nextRunAt?: string): string | null {
+  if (!nextRunAt) return null;
+  const date = new Date(nextRunAt);
+  if (Number.isNaN(date.getTime())) return nextRunAt;
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}
+
+function TriggerBadge({ details }: { details: TriggerDetails }) {
+  const toneByMode: Record<TriggerMode, string> = {
+    manual: 'bg-gray-700 text-gray-200 border-gray-600',
+    cron: 'bg-sky-900/50 text-sky-200 border-sky-700',
+    webhook: 'bg-amber-900/50 text-amber-200 border-amber-700',
+    state: 'bg-emerald-900/50 text-emerald-200 border-emerald-700',
+    unknown: 'bg-gray-700 text-gray-200 border-gray-600',
+  };
+
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${toneByMode[details.mode]}`}>
+      {details.isScheduled ? <Clock3 size={12} aria-hidden="true" /> : <PlayCircle size={12} aria-hidden="true" />}
+      {details.label}
+    </span>
+  );
+}
+
 function WorkflowCard({
   workflow,
   isUpdatingStatus,
@@ -51,6 +200,13 @@ function WorkflowCard({
 }) {
   const status = getWorkflowStatus(workflow);
   const isPublished = status === 'published';
+  const triggerDetails = getWorkflowTriggerDetails(workflow);
+  const scheduleSummary = triggerDetails.isScheduled
+    ? triggerDetails.schedule ?? 'Schedule not configured'
+    : null;
+  const nextRunLabel = triggerDetails.isScheduled
+    ? formatNextRunTimestamp(triggerDetails.nextRunAt) ?? 'Waiting for scheduler'
+    : null;
 
   return (
     <article
@@ -68,8 +224,22 @@ function WorkflowCard({
           <h3 className="text-white font-medium">{workflow.name}</h3>
           <StatusBadge status={status} />
         </div>
+        <div className="mb-2">
+          <TriggerBadge details={triggerDetails} />
+        </div>
         {workflow.description && (
           <p className="text-sm text-gray-400 mb-3">{workflow.description}</p>
+        )}
+        {scheduleSummary && (
+          <p className="text-xs text-sky-200/90 mb-3">
+            Schedule: <span className="font-mono">{scheduleSummary}</span>
+            {triggerDetails.timezone ? ` (${triggerDetails.timezone})` : ''}
+          </p>
+        )}
+        {nextRunLabel && (
+          <p className="text-xs text-sky-100/90 mb-3">
+            Next run: {nextRunLabel}
+          </p>
         )}
         <div className="flex items-center justify-between text-xs text-gray-500">
           <span>{workflow.nodes.length} nodes</span>
@@ -118,12 +288,15 @@ function KpiChips({ workflows }: { workflows: Workflow[] }) {
     return workflows.reduce(
       (acc, workflow) => {
         const status = getWorkflowStatus(workflow);
+        const triggerDetails = getWorkflowTriggerDetails(workflow);
         acc.total += 1;
         if (status === 'published') acc.published += 1;
         if (status === 'draft') acc.draft += 1;
+        if (triggerDetails.isScheduled) acc.scheduled += 1;
+        else acc.onDemand += 1;
         return acc;
       },
-      { total: 0, published: 0, draft: 0 },
+      { total: 0, published: 0, draft: 0, scheduled: 0, onDemand: 0 },
     );
   }, [workflows]);
 
@@ -137,6 +310,12 @@ function KpiChips({ workflows }: { workflows: Workflow[] }) {
       </span>
       <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-800 border border-gray-700 text-gray-300">
         Draft {stats.draft}
+      </span>
+      <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-sky-900/40 border border-sky-800 text-sky-200">
+        Scheduled {stats.scheduled}
+      </span>
+      <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-800 border border-gray-700 text-gray-300">
+        On-demand {stats.onDemand}
       </span>
     </div>
   );
@@ -193,12 +372,12 @@ function EmptyState({ onNavigateToEditor }: { onNavigateToEditor: (id?: string) 
         <div className="flex-1">
           <h3 className="text-lg font-semibold text-white">No workflows yet</h3>
           <p className="mt-1 text-sm text-gray-300">
-            Create your first autonomous workflow to start automating issue resolution.
+            Create your first scheduled or on-demand workflow to automate engineering tasks.
           </p>
           <ul className="mt-4 space-y-1 text-sm text-gray-300">
-            <li>1. Add a trigger node to start the workflow.</li>
+            <li>1. Add a trigger node (manual, cron, webhook, or state).</li>
             <li>2. Connect GitHub and Claude actions.</li>
-            <li>3. Save and run from Monitoring.</li>
+            <li>3. Publish to enable execution.</li>
           </ul>
           <button
             type="button"
@@ -325,8 +504,8 @@ export function DashboardPage() {
   return (
     <CenteredPage width="lg">
       <PageHeader
-        title="Workflows"
-        description="Manage your autonomous development workflows"
+        title="Workflow Scheduler"
+        description="Manage scheduled and on-demand workflow automations"
         actions={(
           <button
             type="button"
