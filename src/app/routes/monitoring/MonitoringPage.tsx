@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { WorkflowExecution, ExecutionLog, ExecutionStatus } from '@/types/workflow';
 import { listExecutions, getExecutionLogs } from '@/lib/api/workflow';
 import { cancelExecution } from '@/lib/api/claude';
+import { useRouter } from '@/lib/router';
 
 const STATUS_STYLES: Record<ExecutionStatus, string> = {
   IDLE: 'bg-gray-700 text-gray-300',
@@ -116,6 +117,8 @@ function LogViewer({ logs, isStreaming }: { logs: ExecutionLog[]; isStreaming: b
 }
 
 export function MonitoringPage() {
+  const { params } = useRouter();
+  const requestedExecutionId = params.get('id');
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [streamingLogs, setStreamingLogs] = useState<ExecutionLog[]>([]);
 
@@ -132,6 +135,14 @@ export function MonitoringPage() {
     enabled: !!selectedExecutionId,
     retry: false,
   });
+
+  useEffect(() => {
+    if (!requestedExecutionId || !executions) return;
+    const exists = executions.some((execution) => execution.id === requestedExecutionId);
+    if (exists && selectedExecutionId !== requestedExecutionId) {
+      setSelectedExecutionId(requestedExecutionId);
+    }
+  }, [requestedExecutionId, executions, selectedExecutionId]);
 
   useEffect(() => {
     if (!selectedExecutionId || !executions) return;

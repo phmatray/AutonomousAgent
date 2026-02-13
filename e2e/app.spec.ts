@@ -449,3 +449,20 @@ test('navigates to monitoring after starting execution', async ({ page }) => {
 
   await expect(page).toHaveURL(/#\/monitoring\?id=exec-/);
 });
+
+test('auto-selects execution in monitoring when opened with execution id', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate((workflow) => {
+    const state = (window as Window & {
+      __E2E_STATE__?: { workflows: unknown[] };
+    }).__E2E_STATE__;
+    if (state) state.workflows = [workflow];
+  }, mockWorkflow);
+
+  await page.goto('/#/editor?id=wf-123');
+  await page.getByRole('button', { name: 'Execute workflow (Cmd+Enter)' }).click();
+
+  await expect(page).toHaveURL(/#\/monitoring\?id=exec-/);
+  await expect(page.getByText(/^Execution: exec-/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cancel execution' })).toBeVisible();
+});
