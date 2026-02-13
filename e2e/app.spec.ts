@@ -394,3 +394,43 @@ test('prevents duplicate execute requests while execution is starting', async ({
 
   expect(executeCalls).toHaveLength(1);
 });
+
+test('creates and executes workflow when execute is clicked on a new workflow', async ({ page }) => {
+  await page.goto('/#/editor');
+
+  await page.getByLabel('Workflow name').fill('Execute New Workflow');
+  await page.getByRole('button', { name: 'Execute workflow (Cmd+Enter)' }).click();
+
+  await expect
+    .poll(async () => {
+      return page.evaluate(() => {
+        const state = (window as Window & {
+          __E2E_STATE__?: {
+            invokeLog: Array<{ cmd: string }>;
+          };
+        }).__E2E_STATE__;
+        const log = state?.invokeLog ?? [];
+        const created = log.some((entry) => entry.cmd === 'create_workflow');
+        const executed = log.some((entry) => entry.cmd === 'execute_workflow');
+        return created && executed;
+      });
+    })
+    .toBe(true);
+
+  const invokeLog = await page.evaluate(() => {
+    const state = (window as Window & {
+      __E2E_STATE__?: {
+        invokeLog: Array<{ cmd: string; args: { workflowId?: string; workflow?: { name?: string } } }>;
+      };
+    }).__E2E_STATE__;
+    return state?.invokeLog ?? [];
+  });
+
+  const createIndex = invokeLog.findIndex((entry) => entry.cmd === 'create_workflow');
+  const executeIndex = invokeLog.findIndex((entry) => entry.cmd === 'execute_workflow');
+
+  expect(createIndex).toBeGreaterThanOrEqual(0);
+  expect(executeIndex).toBeGreaterThan(createIndex);
+  expect(invokeLog[createIndex]?.args?.workflow?.name).toBe('Execute New Workflow');
+  expect(invokeLog[executeIndex]?.args?.workflowId).toBe('wf-created');
+});

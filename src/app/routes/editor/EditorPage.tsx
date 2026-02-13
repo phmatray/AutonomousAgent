@@ -91,28 +91,33 @@ export function EditorPage() {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const executeInFlightRef = useRef(false);
 
+  const buildWorkflowPayload = useCallback(
+    (): Workflow => ({
+      id: workflowId || '',
+      name: workflowName,
+      nodes: nodes.map((n) => ({
+        id: n.id,
+        type: n.data.nodeType,
+        config: n.data.config || undefined,
+        position: n.position ? { x: n.position.x, y: n.position.y } : undefined,
+      })),
+      edges: edges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle || undefined,
+        targetHandle: e.targetHandle || undefined,
+      })),
+      version: 1,
+      createdAt: '',
+      updatedAt: '',
+    }),
+    [workflowId, workflowName, nodes, edges],
+  );
+
   const saveWorkflowMutation = useMutation({
     mutationFn: async () => {
-      const workflowData: Workflow = {
-        id: workflowId || '',  // Empty string for new workflows (backend will generate UUID)
-        name: workflowName,
-        nodes: nodes.map((n) => ({
-          id: n.id,
-          type: n.data.nodeType,
-          config: n.data.config || undefined,
-          position: n.position ? { x: n.position.x, y: n.position.y } : undefined,
-        })),
-        edges: edges.map((e) => ({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          sourceHandle: e.sourceHandle || undefined,
-          targetHandle: e.targetHandle || undefined,
-        })),
-        version: 1,
-        createdAt: '',  // Backend will generate timestamp for new workflows
-        updatedAt: '',  // Backend will generate timestamp for new workflows
-      };
+      const workflowData = buildWorkflowPayload();
 
       if (workflowId) {
         // Update existing workflow
@@ -144,8 +149,14 @@ export function EditorPage() {
 
   const executeWorkflowMutation = useMutation({
     mutationFn: async () => {
-      if (!workflowId) return null;
-      return executeWorkflow(workflowId, 'manual');
+      let targetWorkflowId = workflowId;
+      if (!targetWorkflowId) {
+        const createdWorkflow = await createWorkflow(buildWorkflowPayload());
+        targetWorkflowId = createdWorkflow.id;
+        setWorkflow(createdWorkflow.id, createdWorkflow.name, nodes, edges);
+        navigate('editor', { id: createdWorkflow.id });
+      }
+      return executeWorkflow(targetWorkflowId, 'manual');
     },
     onSettled: () => {
       executeInFlightRef.current = false;
@@ -159,10 +170,10 @@ export function EditorPage() {
   }, [saveWorkflowMutation]);
 
   const handleExecute = useCallback(() => {
-    if (!workflowId || executeInFlightRef.current) return;
+    if (executeInFlightRef.current) return;
     executeInFlightRef.current = true;
     executeWorkflowMutation.mutate();
-  }, [workflowId, executeWorkflowMutation]);
+  }, [executeWorkflowMutation]);
 
   const handleDragStart = useCallback((type: NodeType, startX: number, startY: number) => {
     setDragState({
