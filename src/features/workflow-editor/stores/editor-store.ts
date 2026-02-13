@@ -8,11 +8,17 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
   addEdge,
-  type Connection,
 } from '@xyflow/react';
 import type { NodeType } from '@/types/workflow';
-import { getNodeLabel, NODE_SCHEMAS } from '@/features/workflow-editor/nodes/catalog';
+import { getNodeLabel } from '@/features/workflow-editor/nodes/catalog';
 import type { TemplateVariable } from '@/components/ui/form';
+import {
+  getConnectionStrokeColor,
+  getAvailableVariablesForNode,
+  isConnectionValid,
+  validateNodeConfigForNode,
+  type NodeValidationResult,
+} from '@/features/workflow-editor/domain';
 
 interface NodeData extends Record<string, unknown> {
   label: string;
@@ -23,16 +29,7 @@ interface NodeData extends Record<string, unknown> {
 
 export type WorkflowNode = Node<NodeData>;
 export type WorkflowEdge = Edge;
-
-export interface FieldValidationError {
-  key: string;
-  message: string;
-}
-
-export interface NodeValidationResult {
-  valid: boolean;
-  errors: FieldValidationError[];
-}
+export type { FieldValidationError, NodeValidationResult } from '@/features/workflow-editor/domain';
 
 interface EditorState {
   nodes: WorkflowNode[];
@@ -62,23 +59,6 @@ interface EditorState {
   validateNodeConfig: (nodeId: string) => NodeValidationResult;
 }
 
-function isConnectionValid(connection: Connection, nodes: WorkflowNode[], edges: WorkflowEdge[]): boolean {
-  if (connection.source === connection.target) return false;
-  const sourceNode = nodes.find((n) => n.id === connection.source);
-  const targetNode = nodes.find((n) => n.id === connection.target);
-  if (!sourceNode || !targetNode) return false;
-
-  // For condition nodes, prevent multiple edges from the same sourceHandle
-  if (sourceNode.data.nodeType === 'condition' && connection.sourceHandle) {
-    const existingEdge = edges.find(
-      (e) => e.source === connection.source && e.sourceHandle === connection.sourceHandle,
-    );
-    if (existingEdge) return false;
-  }
-
-  return true;
-}
-
 export const useEditorStore = create<EditorState>((set, get) => ({
   nodes: [],
   edges: [],
@@ -105,13 +85,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   onConnect: (connection) => {
     const { nodes, edges } = get();
     if (!isConnectionValid(connection, nodes, edges)) return;
-
-    // Color edges based on condition node sourceHandle
-    const sourceNode = nodes.find((n) => n.id === connection.source);
-    let strokeColor = '#cba6f7';
-    if (sourceNode?.data.nodeType === 'condition') {
-      strokeColor = connection.sourceHandle === 'true' ? '#a6e3a1' : '#f38ba8';
-    }
+    const strokeColor = getConnectionStrokeColor(connection, nodes);
 
     set({
       edges: addEdge(
@@ -230,63 +204,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   getAvailableVariables: (nodeId: string): TemplateVariable[] => {
     const { nodes, edges } = get();
-    // Find all upstream nodes by traversing edges backwards
-    const upstream = new Set<string>();
-    const queue = [nodeId];
-    while (queue.length > 0) {
-      const current = queue.pop()!;
-      for (const edge of edges) {
-        if (edge.target === current && !upstream.has(edge.source)) {
-          upstream.add(edge.source);
-          queue.push(edge.source);
-        }
-      }
-    }
-
-    const variables: TemplateVariable[] = [];
-    for (const upId of upstream) {
-      const node = nodes.find((n) => n.id === upId);
-      if (!node) continue;
-      const schema = NODE_SCHEMAS[node.data.nodeType];
-      if (!schema) continue;
-      for (const output of schema.outputs) {
-        variables.push({
-          label: `${getNodeLabel(node.data.nodeType)} - ${output.name}`,
-          value: `${upId}.${output.name}`,
-          description: output.description,
-        });
-      }
-    }
-    return variables;
+    return getAvailableVariablesForNode(nodeId, nodes, edges);
   },
 
   validateNodeConfig: (nodeId: string): NodeValidationResult => {
     const { nodes } = get();
-    const node = nodes.find((n) => n.id === nodeId);
-    if (!node) return { valid: true, errors: [] };
-
-    const schema = NODE_SCHEMAS[node.data.nodeType];
-    if (!schema) return { valid: true, errors: [] };
-
-    const config = (node.data.config ?? {}) as Record<string, unknown>;
-    const errors: FieldValidationError[] = [];
-
-    for (const field of schema.fields) {
-      const value = config[field.key];
-      if (field.required) {
-        const strVal = typeof value === 'string' ? value.trim() : String(value ?? '');
-        if (!value || strVal === '' || strVal === 'undefined') {
-          errors.push({ key: field.key, message: `${field.label} is required` });
-        }
-      }
-      if (field.type === 'number' && value !== undefined && value !== '') {
-        const num = Number(value);
-        if (isNaN(num)) {
-          errors.push({ key: field.key, message: `${field.label} must be a number` });
-        }
-      }
-    }
-
-    return { valid: errors.length === 0, errors };
+    return validateNodeConfigForNode(nodeId, nodes);
   },
 }));
