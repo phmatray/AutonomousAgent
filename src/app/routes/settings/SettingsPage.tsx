@@ -7,7 +7,13 @@ export function SettingsPage() {
   const [token, setToken] = useState('');
   const [showToken, setShowToken] = useState(false);
 
-  const { data: authStatus, isLoading: isCheckingAuth } = useQuery({
+  const {
+    data: authStatus,
+    isLoading: isCheckingAuth,
+    isError: isAuthStatusError,
+    refetch: refetchAuthStatus,
+    isFetching: isFetchingAuthStatus,
+  } = useQuery({
     queryKey: ['github-auth'],
     queryFn: getAuthStatus,
     retry: false,
@@ -51,12 +57,31 @@ export function SettingsPage() {
                 <span className="text-sm text-green-400">
                   Connected as {authStatus.username}
                 </span>
+              ) : isAuthStatusError ? (
+                <span className="text-sm text-red-400">
+                  Could not verify authentication status
+                </span>
               ) : (
                 <span className="text-sm text-yellow-400">
                   Not authenticated
                 </span>
               )}
             </div>
+            {isAuthStatusError && (
+              <div className="mt-3 p-3 bg-red-900/30 border border-red-800 rounded-lg" role="alert">
+                <p className="text-xs text-red-300 mb-2">
+                  Unable to contact backend while checking GitHub authentication.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => refetchAuthStatus()}
+                  disabled={isFetchingAuthStatus}
+                  className="px-3 py-1.5 text-xs bg-red-800/70 text-red-100 rounded hover:bg-red-700/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isFetchingAuthStatus ? 'Retrying...' : 'Retry status check'}
+                </button>
+              </div>
+            )}
           </div>
 
           <form

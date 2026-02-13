@@ -127,6 +127,7 @@ export function MonitoringPage() {
     error: executionsError,
     refetch: refetchExecutions,
     isFetching: isFetchingExecutions,
+    isLoading: isLoadingExecutions,
   } = useQuery<WorkflowExecution[]>({
     queryKey: ['executions'],
     queryFn: () => listExecutions(),
@@ -208,12 +209,17 @@ export function MonitoringPage() {
           </div>
         )}
         <div className="flex-1 overflow-y-auto p-3 space-y-2" role="list" aria-label="Workflow executions">
-          {(!executions || executions.length === 0) && (
+          {isLoadingExecutions && (
+            <p className="text-sm text-gray-500 text-center py-8" role="status" aria-live="polite">
+              Loading executions...
+            </p>
+          )}
+          {!isLoadingExecutions && !executionsError && (!executions || executions.length === 0) && (
             <p className="text-sm text-gray-500 text-center py-8">
               No executions yet
             </p>
           )}
-          {executions?.map((exec) => (
+          {!executionsError && executions?.map((exec) => (
             <div key={exec.id} role="listitem">
               <ExecutionCard
                 execution={exec}
@@ -256,9 +262,15 @@ export function MonitoringPage() {
           </>
         ) : (
           <div className="flex items-center justify-center h-full">
-            <p className="text-gray-500">
-              Select an execution to view logs
-            </p>
+            {executionsError ? (
+              <p className="text-gray-500">Execution data unavailable. Retry from the left panel.</p>
+            ) : isLoadingExecutions ? (
+              <p className="text-gray-500">Loading executions...</p>
+            ) : (
+              <p className="text-gray-500">
+                Select an execution to view logs
+              </p>
+            )}
           </div>
         )}
       </main>
