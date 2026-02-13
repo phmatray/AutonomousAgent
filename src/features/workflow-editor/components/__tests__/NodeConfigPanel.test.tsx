@@ -1,9 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { NodeType } from '@/types/workflow';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NodeConfigPanel } from '../NodeConfigPanel';
 import { useEditorStore } from '@/features/workflow-editor/stores/editor-store';
+import { listGitHubCredentials } from '@/lib/api/github';
+
+vi.mock('@/lib/api/github', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api/github')>('@/lib/api/github');
+  return {
+    ...actual,
+    listGitHubCredentials: vi.fn(),
+  };
+});
 
 // Helper to set up the editor store with a selected node
 function setupStoreWithNode(
@@ -12,32 +21,37 @@ function setupStoreWithNode(
   label = 'Test Node',
 ) {
   const nodeId = 'test-node-1';
-  useEditorStore.setState({
-    selectedNodeId: nodeId,
-    nodes: [
-      {
-        id: nodeId,
-        type: 'workflowNode',
-        position: { x: 0, y: 0 },
-        data: {
-          label,
-          nodeType,
-          config,
+  act(() => {
+    useEditorStore.setState({
+      selectedNodeId: nodeId,
+      nodes: [
+        {
+          id: nodeId,
+          type: 'workflowNode',
+          position: { x: 0, y: 0 },
+          data: {
+            label,
+            nodeType,
+            config,
+          },
         },
-      },
-    ],
-    edges: [],
+      ],
+      edges: [],
+    });
   });
   return nodeId;
 }
 
 describe('NodeConfigPanel', () => {
   beforeEach(() => {
-    useEditorStore.setState({
-      selectedNodeId: null,
-      nodes: [],
-      edges: [],
-      pendingDeleteNodeId: null,
+    vi.mocked(listGitHubCredentials).mockResolvedValue([]);
+    act(() => {
+      useEditorStore.setState({
+        selectedNodeId: null,
+        nodes: [],
+        edges: [],
+        pendingDeleteNodeId: null,
+      });
     });
   });
 
@@ -56,9 +70,10 @@ describe('NodeConfigPanel', () => {
     expect(screen.getByText('My Trigger')).toBeInTheDocument();
   });
 
-  it('renders the node type identifier', () => {
+  it('renders the node type identifier', async () => {
     setupStoreWithNode('github.sync', {}, 'Sync Repository');
     render(<NodeConfigPanel />);
+    await waitFor(() => expect(listGitHubCredentials).toHaveBeenCalled());
     expect(screen.getByText('github.sync')).toBeInTheDocument();
   });
 
@@ -84,9 +99,10 @@ describe('NodeConfigPanel', () => {
     expect(screen.getByText('Trigger Type')).toBeInTheDocument();
   });
 
-  it('renders github.sync config fields', () => {
+  it('renders github.sync config fields', async () => {
     setupStoreWithNode('github.sync', {});
     render(<NodeConfigPanel />);
+    await waitFor(() => expect(listGitHubCredentials).toHaveBeenCalled());
     expect(screen.getByText('Owner')).toBeInTheDocument();
     expect(screen.getByText('Repository')).toBeInTheDocument();
     expect(screen.getByText('Local Path')).toBeInTheDocument();
@@ -116,9 +132,10 @@ describe('NodeConfigPanel', () => {
   // Validation
   // ------------------------------------------------------------------
 
-  it('shows validation errors for missing required fields', () => {
+  it('shows validation errors for missing required fields', async () => {
     setupStoreWithNode('github.sync', {});
     render(<NodeConfigPanel />);
+    await waitFor(() => expect(listGitHubCredentials).toHaveBeenCalled());
     // github.sync requires owner, repo, path
     expect(screen.getByText(/field.*need attention/i)).toBeInTheDocument();
     expect(screen.getByText('Owner is required')).toBeInTheDocument();
@@ -126,13 +143,14 @@ describe('NodeConfigPanel', () => {
     expect(screen.getByText('Local Path is required')).toBeInTheDocument();
   });
 
-  it('shows valid state when all required fields are filled', () => {
+  it('shows valid state when all required fields are filled', async () => {
     setupStoreWithNode('github.sync', {
       owner: 'octocat',
       repo: 'my-repo',
       path: '/tmp/repos',
     });
     render(<NodeConfigPanel />);
+    await waitFor(() => expect(listGitHubCredentials).toHaveBeenCalled());
     expect(screen.getByText('Configuration valid')).toBeInTheDocument();
   });
 
@@ -164,7 +182,9 @@ describe('NodeConfigPanel', () => {
     const user = userEvent.setup();
     setupStoreWithNode('trigger', {}, 'My Trigger');
     const requestDeleteNode = vi.fn();
-    useEditorStore.setState({ requestDeleteNode });
+    act(() => {
+      useEditorStore.setState({ requestDeleteNode });
+    });
 
     render(<NodeConfigPanel />);
     await user.click(screen.getByRole('button', { name: 'Delete My Trigger node' }));

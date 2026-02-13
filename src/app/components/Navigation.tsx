@@ -12,7 +12,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { route: 'dashboard', label: 'Dashboard' },
-  // { route: 'backlog', label: 'Backlog' }, // TODO: Implement backlog feature
+  { route: 'backlog', label: 'Backlog' },
   { route: 'editor', label: 'Editor' },
   { route: 'monitoring', label: 'Monitoring' },
   { route: 'settings', label: 'Settings' },

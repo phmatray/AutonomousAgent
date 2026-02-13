@@ -259,6 +259,8 @@ export function MonitoringPage() {
   const logs = state.context.logs;
   const streamingLogs = state.context.streamingLogs;
   const executionsError = state.context.executionsError;
+  const logsError = state.context.logsError;
+  const cancelError = state.context.cancelError;
   const isLoadingExecutions = state.matches('loadingExecutions');
   const isFetchingExecutions = state.matches('refreshingExecutions');
 
@@ -400,6 +402,31 @@ export function MonitoringPage() {
                 )}
               </div>
             </header>
+            {(logsError || cancelError) && (
+              <div className="px-4 py-2 border-b border-gray-800 bg-red-900/20 text-xs text-red-300">
+                {cancelError && (
+                  <p role="alert">
+                    Failed to cancel execution: {cancelError}
+                  </p>
+                )}
+                {logsError && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <p role="alert">
+                      Failed to load logs: {logsError}
+                    </p>
+                    {selectedExecutionId && (
+                      <button
+                        type="button"
+                        onClick={() => send({ type: 'SELECT_EXECUTION', executionId: selectedExecutionId })}
+                        className="px-2 py-0.5 rounded bg-red-800/70 text-red-100 hover:bg-red-700/80 transition-colors"
+                      >
+                        Reload logs
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             {(copyState.copied !== 'none' || copyState.error) && (
               <div className="px-4 py-2 border-b border-gray-800 bg-gray-900/80 text-xs">
                 {copyState.copied === 'clipboard' && (

@@ -1,6 +1,6 @@
 import { assign, setup } from 'xstate';
 
-export type Route = 'dashboard' | 'editor' | 'monitoring' | 'settings';
+export type Route = 'dashboard' | 'backlog' | 'editor' | 'monitoring' | 'settings';
 
 interface RouterContext {
   hash: string;
@@ -10,7 +10,7 @@ type RouterEvent =
   | { type: 'HASH_CHANGED'; hash: string }
   | { type: 'NAVIGATE'; route: Route; queryParams?: Record<string, string> };
 
-const validRoutes: Route[] = ['dashboard', 'editor', 'monitoring', 'settings'];
+const validRoutes: Route[] = ['dashboard', 'backlog', 'editor', 'monitoring', 'settings'];
 
 export function getRouteFromHash(hashValue: string): Route {
   const hash = hashValue.replace('#/', '').replace('#', '');
