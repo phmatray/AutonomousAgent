@@ -11,6 +11,7 @@ import type {
 import { copyDebugBundle, type DebugBundleCredentialAuditFilter } from '@/lib/api/workflow';
 import { useRouter } from '@/lib/router';
 import { monitoringMachine } from './monitoring-machine';
+import { Badge, Input } from '@/components/ui/primitives';
 
 const STATUS_STYLES: Record<ExecutionStatus, string> = {
   IDLE: 'bg-gray-700 text-gray-300',
@@ -36,6 +37,16 @@ const SIDEBAR_MAX_WIDTH = 480;
 const SIDEBAR_DEFAULT_WIDTH = 288;
 const MAX_DEBUG_BUNDLE_CREDENTIAL_EVENTS = 200;
 const LOG_DENSITY_MODES = ['compact', 'expanded'] as const;
+const EXECUTION_STATUS_FILTERS: Array<'ALL' | ExecutionStatus> = [
+  'ALL',
+  'RUNNING',
+  'FAILED',
+  'COMPLETED',
+  'CANCELLED',
+  'SCHEDULED',
+  'PAUSED',
+  'IDLE',
+];
 
 type DebugBundleExportMode = 'full' | 'credentialFiltered';
 type DebugBundleResultFilter = 'all' | 'success' | 'failure';
@@ -542,6 +553,8 @@ export function MonitoringPage() {
   const isFetchingExecutions = state.matches('refreshingExecutions');
   const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
   const [logDensityMode, setLogDensityMode] = useState<LogDensityMode>(loadLogDensityMode);
+  const [executionSearchQuery, setExecutionSearchQuery] = useState('');
+  const [executionStatusFilter, setExecutionStatusFilter] = useState<'ALL' | ExecutionStatus>('ALL');
   const [isResizing, setIsResizing] = useState(false);
   const [timelineNodes, setTimelineNodes] = useState<TimelineNodeState[]>([]);
   const [showAdvancedDiagnostics, setShowAdvancedDiagnostics] = useState(false);
@@ -619,6 +632,34 @@ export function MonitoringPage() {
   const allLogs = [...logs, ...streamingLogs];
   const selectedExecution = executions.find((e) => e.id === selectedExecutionId);
   const isStreaming = selectedExecution?.status === 'RUNNING';
+  const executionStatusCounts = useMemo(() => {
+    const counts: Record<ExecutionStatus, number> = {
+      IDLE: 0,
+      SCHEDULED: 0,
+      RUNNING: 0,
+      PAUSED: 0,
+      COMPLETED: 0,
+      FAILED: 0,
+      CANCELLED: 0,
+    };
+    for (const execution of executions) {
+      counts[execution.status] += 1;
+    }
+    return counts;
+  }, [executions]);
+  const filteredExecutions = useMemo(() => {
+    const normalizedSearch = executionSearchQuery.trim().toLowerCase();
+    return executions.filter((execution) => {
+      if (executionStatusFilter !== 'ALL' && execution.status !== executionStatusFilter) {
+        return false;
+      }
+      if (!normalizedSearch) return true;
+
+      return execution.id.toLowerCase().includes(normalizedSearch)
+        || execution.workflowId.toLowerCase().includes(normalizedSearch)
+        || execution.status.toLowerCase().includes(normalizedSearch);
+    });
+  }, [executions, executionSearchQuery, executionStatusFilter]);
   const contextEntries = useMemo(
     () => getExecutionContextEntries(selectedExecution?.context),
     [selectedExecution?.context],
@@ -773,6 +814,59 @@ export function MonitoringPage() {
           <p className="text-xs text-gray-400 mt-1">
             Real-time workflow monitoring
           </p>
+          <div className="mt-3 space-y-2">
+            <label className="block">
+              <span className="sr-only">Search executions</span>
+              <Input
+                type="search"
+                value={executionSearchQuery}
+                onChange={(event) => setExecutionSearchQuery(event.target.value)}
+                placeholder="Search by execution, workflow, or status"
+                className="h-9 bg-gray-800 border-gray-700 text-xs"
+                aria-label="Search executions"
+              />
+            </label>
+            <div className="flex items-center gap-2">
+              <label className="flex-1">
+                <span className="sr-only">Filter executions by status</span>
+                <select
+                  value={executionStatusFilter}
+                  onChange={(event) => setExecutionStatusFilter(event.target.value as 'ALL' | ExecutionStatus)}
+                  className="h-9 w-full rounded border border-gray-700 bg-gray-800 px-2 text-xs text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  aria-label="Filter executions by status"
+                >
+                  {EXECUTION_STATUS_FILTERS.map((status) => (
+                    <option key={status} value={status}>
+                      {status === 'ALL' ? 'All statuses' : status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {(executionSearchQuery || executionStatusFilter !== 'ALL') ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExecutionSearchQuery('');
+                    setExecutionStatusFilter('ALL');
+                  }}
+                  className="h-9 rounded border border-gray-700 px-2 text-xs text-gray-300 hover:border-gray-600 hover:text-white"
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              <Badge tone={executionStatusCounts.RUNNING > 0 ? 'info' : 'default'} className="text-[11px]">
+                Running {executionStatusCounts.RUNNING}
+              </Badge>
+              <Badge tone={executionStatusCounts.FAILED > 0 ? 'danger' : 'default'} className="text-[11px]">
+                Failed {executionStatusCounts.FAILED}
+              </Badge>
+              <Badge tone="success" className="text-[11px]">
+                Completed {executionStatusCounts.COMPLETED}
+              </Badge>
+            </div>
+          </div>
         </div>
         {executionsError && (
           <div className="mx-3 mt-3 p-2.5 rounded border border-red-800 bg-red-900/25 text-xs text-red-300" role="alert">
@@ -798,7 +892,12 @@ export function MonitoringPage() {
               No executions yet
             </p>
           )}
-          {!executionsError && executions.map((exec) => (
+          {!isLoadingExecutions && !executionsError && executions.length > 0 && filteredExecutions.length === 0 && (
+            <p className="text-sm text-gray-500 text-center py-8">
+              No executions match the current filters.
+            </p>
+          )}
+          {!executionsError && filteredExecutions.map((exec) => (
             <div key={exec.id} role="listitem">
               <ExecutionCard
                 execution={exec}

@@ -5,7 +5,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { CenteredPage, PageHeader } from '@/app/components/PageLayout';
+import {
+  CenteredPage,
+  PageEmptyState,
+  PageHeader,
+  PageLoadingState,
+  PageNotice,
+} from '@/app/components/PageLayout';
 import { useWorkflowCatalogActorRef, WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
 import { executeWorkflow, listExecutions, updateWorkflow } from '@/lib/api/workflow';
 import { Badge, Button, Input, SectionCard } from '@/components/ui/primitives';
@@ -13,6 +19,8 @@ import { Badge, Button, Input, SectionCard } from '@/components/ui/primitives';
 type SortOption = 'updated-desc' | 'name-asc' | 'name-desc' | 'nodes-desc';
 type WorkflowStatus = 'draft' | 'published';
 type TriggerMode = 'manual' | 'cron' | 'webhook' | 'state' | 'unknown';
+type VisibilityFilter = 'all' | 'published' | 'draft';
+type TriggerFilter = 'all' | 'scheduled' | 'on-demand';
 
 interface TriggerDetails {
   mode: TriggerMode;
@@ -179,6 +187,15 @@ function TriggerBadge({ details }: { details: TriggerDetails }) {
   );
 }
 
+function formatWorkflowUpdatedAt(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}
+
 function WorkflowCard({
   workflow,
   isUpdatingStatus,
@@ -241,6 +258,7 @@ function WorkflowCard({
         )}
         <div className="flex items-center justify-between text-xs text-gray-500">
           <span>{workflow.nodes.length} nodes</span>
+          <span>Updated {formatWorkflowUpdatedAt(workflow.updatedAt)}</span>
           <span>v{workflow.version}</span>
         </div>
       </button>
@@ -396,17 +414,49 @@ function ExecutionHealthCard({ executions }: { executions: Awaited<ReturnType<ty
 function SearchAndSortControls({
   searchQuery,
   sortBy,
+  statusFilter,
+  triggerFilter,
+  matchingCount,
   onSearchChange,
   onSortChange,
+  onStatusFilterChange,
+  onTriggerFilterChange,
+  onClearFilters,
 }: {
   searchQuery: string;
   sortBy: SortOption;
+  statusFilter: VisibilityFilter;
+  triggerFilter: TriggerFilter;
+  matchingCount: number;
   onSearchChange: (value: string) => void;
   onSortChange: (value: SortOption) => void;
+  onStatusFilterChange: (value: VisibilityFilter) => void;
+  onTriggerFilterChange: (value: TriggerFilter) => void;
+  onClearFilters: () => void;
 }) {
+  const hasActiveFilters = Boolean(
+    searchQuery.trim() || statusFilter !== 'all' || triggerFilter !== 'all',
+  );
+
   return (
-    <div className="mb-4 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-      <label className="flex-1">
+    <div className="mb-4 rounded-lg border border-gray-700 bg-gray-900/60 p-3">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="text-xs text-gray-400">
+          Showing {matchingCount} matching workflow{matchingCount !== 1 ? 's' : ''}
+        </p>
+        {hasActiveFilters ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClearFilters}
+            className="text-xs"
+          >
+            Clear Filters
+          </Button>
+        ) : null}
+      </div>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <label className="flex-1">
         <span className="sr-only">Search workflows</span>
         <Input
           type="search"
@@ -415,21 +465,48 @@ function SearchAndSortControls({
           placeholder="Search workflows..."
           className="bg-gray-800 text-gray-200 placeholder:text-gray-500"
         />
-      </label>
-      <label className="sm:w-56">
-        <span className="sr-only">Sort workflows</span>
-        <select
-          value={sortBy}
-          onChange={(e) => onSortChange(e.target.value as SortOption)}
-          className="h-10 w-full px-3 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-          aria-label="Sort workflows"
-        >
-          <option value="updated-desc">Most recently updated</option>
-          <option value="name-asc">Name (A-Z)</option>
-          <option value="name-desc">Name (Z-A)</option>
-          <option value="nodes-desc">Most nodes</option>
-        </select>
-      </label>
+        </label>
+        <label className="lg:w-52">
+          <span className="sr-only">Filter by publication state</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => onStatusFilterChange(e.target.value as VisibilityFilter)}
+            className="h-10 w-full px-3 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            aria-label="Filter workflows by publication state"
+          >
+            <option value="all">All states</option>
+            <option value="published">Published</option>
+            <option value="draft">Draft</option>
+          </select>
+        </label>
+        <label className="lg:w-52">
+          <span className="sr-only">Filter by trigger type</span>
+          <select
+            value={triggerFilter}
+            onChange={(e) => onTriggerFilterChange(e.target.value as TriggerFilter)}
+            className="h-10 w-full px-3 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            aria-label="Filter workflows by trigger type"
+          >
+            <option value="all">All triggers</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="on-demand">On-demand</option>
+          </select>
+        </label>
+        <label className="lg:w-56">
+          <span className="sr-only">Sort workflows</span>
+          <select
+            value={sortBy}
+            onChange={(e) => onSortChange(e.target.value as SortOption)}
+            className="h-10 w-full px-3 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            aria-label="Sort workflows"
+          >
+            <option value="updated-desc">Most recently updated</option>
+            <option value="name-asc">Name (A-Z)</option>
+            <option value="name-desc">Name (Z-A)</option>
+            <option value="nodes-desc">Most nodes</option>
+          </select>
+        </label>
+      </div>
     </div>
   );
 }
@@ -507,6 +584,8 @@ export function DashboardPage() {
   const isDeleting = WorkflowCatalogContext.useSelector((state) => state.matches('deleting'));
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('updated-desc');
+  const [statusFilter, setStatusFilter] = useState<VisibilityFilter>('all');
+  const [triggerFilter, setTriggerFilter] = useState<TriggerFilter>('all');
   const [statusUpdateWorkflowId, setStatusUpdateWorkflowId] = useState<string | null>(null);
   const [runningWorkflowId, setRunningWorkflowId] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -613,7 +692,19 @@ export function DashboardPage() {
       })
       : workflows;
 
-    return [...filtered].sort((a, b) => {
+    const stateFiltered = filtered.filter((workflow) => {
+      if (statusFilter === 'all') return true;
+      return getWorkflowStatus(workflow) === statusFilter;
+    });
+
+    const triggerFiltered = stateFiltered.filter((workflow) => {
+      if (triggerFilter === 'all') return true;
+      const details = getWorkflowTriggerDetails(workflow);
+      if (triggerFilter === 'scheduled') return details.isScheduled;
+      return !details.isScheduled;
+    });
+
+    return [...triggerFiltered].sort((a, b) => {
       switch (sortBy) {
         case 'name-asc':
           return a.name.localeCompare(b.name);
@@ -626,7 +717,7 @@ export function DashboardPage() {
           return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
       }
     });
-  }, [workflows, searchQuery, sortBy]);
+  }, [workflows, searchQuery, sortBy, statusFilter, triggerFilter]);
 
   return (
     <CenteredPage width="lg">
@@ -644,26 +735,23 @@ export function DashboardPage() {
       />
 
       {(actionError || pageError) && (
-        <div className="mb-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-300" role="alert">
+        <PageNotice tone="danger" title="Workflow actions unavailable">
           {pageError ?? actionError}
-        </div>
+        </PageNotice>
       )}
 
       {!isLoading && !loadError && !isExecutionHealthLoading && (
         isExecutionHealthError ? (
-          <div className="mb-4 rounded-lg border border-amber-700/50 bg-amber-900/20 px-3 py-2 text-xs text-amber-200">
+          <PageNotice tone="warning" title="Execution health unavailable">
             Execution health is temporarily unavailable.
-          </div>
+          </PageNotice>
         ) : (
           <ExecutionHealthCard executions={executionHealthData} />
         )
       )}
 
       {isLoading && (
-        <div className="flex items-center justify-center py-20" role="status" aria-label="Loading workflows">
-          <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-          <span className="sr-only">Loading workflows...</span>
-        </div>
+        <PageLoadingState label="Loading workflows" />
       )}
 
       {loadError && !isLoading && (
@@ -702,22 +790,40 @@ export function DashboardPage() {
           <SearchAndSortControls
             searchQuery={searchQuery}
             sortBy={sortBy}
+            statusFilter={statusFilter}
+            triggerFilter={triggerFilter}
+            matchingCount={visibleWorkflows.length}
             onSearchChange={setSearchQuery}
             onSortChange={setSortBy}
+            onStatusFilterChange={setStatusFilter}
+            onTriggerFilterChange={setTriggerFilter}
+            onClearFilters={() => {
+              setSearchQuery('');
+              setStatusFilter('all');
+              setTriggerFilter('all');
+              setSortBy('updated-desc');
+            }}
           />
 
           {visibleWorkflows.length === 0 ? (
-            <div className="bg-gray-800 border border-gray-700 rounded-lg p-8 text-center">
-              <p className="text-gray-300">No workflows match your search.</p>
-              <Button
-                onClick={() => setSearchQuery('')}
-                variant="secondary"
-                size="sm"
-                className="mt-3"
-              >
-                Clear Search
-              </Button>
-            </div>
+            <PageEmptyState
+              title="No workflows match your filters"
+              description="Try broadening search, publication state, or trigger mode."
+              actions={(
+                <Button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setStatusFilter('all');
+                    setTriggerFilter('all');
+                    setSortBy('updated-desc');
+                  }}
+                  variant="secondary"
+                  size="sm"
+                >
+                  Reset Filters
+                </Button>
+              )}
+            />
           ) : (
             <div
               className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"

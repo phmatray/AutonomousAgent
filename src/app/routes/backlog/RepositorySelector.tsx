@@ -21,12 +21,17 @@ export function RepositorySelector({
 
   return (
     <div className="mb-4">
-      <label
-        htmlFor="repo-selector"
-        className="block text-sm font-medium text-gray-300 mb-1"
-      >
-        Repository
-      </label>
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <label
+          htmlFor="repo-selector"
+          className="block text-sm font-medium text-gray-300"
+        >
+          Repository
+        </label>
+        <span className="text-xs text-gray-500">
+          {repositories.length} connected repo{repositories.length === 1 ? '' : 's'}
+        </span>
+      </div>
       <select
         id="repo-selector"
         value={selectedValue}
@@ -52,6 +57,9 @@ export function RepositorySelector({
           </option>
         ))}
       </select>
+      <p className="mt-1 text-xs text-gray-500">
+        Choose a repository to sync GitHub issues, triage work, and create linked workflows.
+      </p>
     </div>
   );
 }

@@ -36,6 +36,24 @@ const PRIORITY_STYLES: Record<BacklogPriority, string> = {
   low: 'text-gray-300',
 };
 
+function formatRelativeTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'n/a';
+
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.round(diffMs / 60_000);
+  if (diffMinutes < 1) return 'just now';
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.round(diffHours / 24);
+  if (diffDays < 30) return `${diffDays}d ago`;
+
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date);
+}
+
 export function BacklogTable({
   items,
   selectedItemId,
@@ -84,6 +102,7 @@ export function BacklogTable({
             <th className="sticky top-0 bg-gray-900 px-3 py-3 font-medium" scope="col">Priority</th>
             <th className="sticky top-0 bg-gray-900 px-3 py-3 font-medium" scope="col">Rank</th>
             <th className="sticky top-0 bg-gray-900 px-3 py-3 font-medium" scope="col">State</th>
+            <th className="sticky top-0 bg-gray-900 px-3 py-3 font-medium" scope="col">Updated</th>
             <th className="sticky top-0 bg-gray-900 px-3 py-3 font-medium" scope="col">Linked Workflow</th>
             <th className="sticky top-0 bg-gray-900 px-3 py-3 font-medium" scope="col">Actions</th>
           </tr>
@@ -132,6 +151,12 @@ export function BacklogTable({
                     {item.title}
                   </a>
                   <p className="text-xs font-mono text-gray-500 mt-1">{item.owner}/{item.repo}</p>
+                  {item.labels.length > 0 ? (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {item.labels.slice(0, 3).join(', ')}
+                      {item.labels.length > 3 ? ` +${item.labels.length - 3}` : ''}
+                    </p>
+                  ) : null}
                 </td>
                 <td className="px-3 py-3" onClick={(event) => event.stopPropagation()}>
                   <select
@@ -187,6 +212,9 @@ export function BacklogTable({
                   >
                     {item.state}
                   </span>
+                </td>
+                <td className="px-3 py-3 text-xs text-gray-400">
+                  {formatRelativeTimestamp(item.updated_at)}
                 </td>
                 <td className="px-3 py-3">
                   {item.linked_workflow_id ? (

@@ -152,7 +152,7 @@ function AppContent() {
           Could not verify backend initialization state. Continuing anyway.
         </div>
       )}
-      <main className="flex-1 overflow-hidden" role="main">
+      <main className="flex-1 min-h-0 overflow-hidden" role="main">
         {route === 'dashboard' && <DashboardPage />}
         {route === 'backlog' && <BacklogPage />}
         {route === 'editor' && <EditorPage />}

@@ -5,7 +5,7 @@ import type {
   BacklogPriority,
   BacklogTriageStatus,
 } from '@/types/workflow';
-import { Button } from '@/components/ui/primitives';
+import { Badge, Button } from '@/components/ui/primitives';
 
 interface BacklogDetailsPanelProps {
   item: BacklogItem;
@@ -39,9 +39,17 @@ export function BacklogDetailsPanel({
   createLinkedWorkflowError,
   linkedWorkflowFeedback,
 }: BacklogDetailsPanelProps) {
+  const updatedDate = new Date(item.updated_at);
+  const updatedLabel = Number.isNaN(updatedDate.getTime())
+    ? item.updated_at
+    : new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(updatedDate);
+
   return (
     <aside
-      className="w-full lg:w-96 lg:min-w-96 bg-gray-900 border border-gray-700 rounded-lg p-4 h-fit"
+      className="w-full lg:w-96 lg:min-w-96 bg-gray-900 border border-gray-700 rounded-lg p-4 h-fit lg:sticky lg:top-4"
       aria-label={`Backlog item ${item.issue_number} details`}
     >
       <div className="flex items-start justify-between gap-3 mb-4">
@@ -59,6 +67,15 @@ export function BacklogDetailsPanel({
         >
           Close
         </button>
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Badge tone="info">{item.triage_status}</Badge>
+        <Badge tone={item.priority === 'critical' || item.priority === 'high' ? 'warning' : 'default'}>
+          {item.priority}
+        </Badge>
+        <Badge>effort: {item.effort}</Badge>
+        <Badge>impact: {item.impact}</Badge>
       </div>
 
       <div className="mb-4 space-y-2">
@@ -160,6 +177,10 @@ export function BacklogDetailsPanel({
         <div>
           <dt className="text-gray-400">State</dt>
           <dd className="text-gray-200">{item.state}</dd>
+        </div>
+        <div>
+          <dt className="text-gray-400">Updated</dt>
+          <dd className="text-gray-200">{updatedLabel}</dd>
         </div>
         <div>
           <dt className="text-gray-400">Labels</dt>

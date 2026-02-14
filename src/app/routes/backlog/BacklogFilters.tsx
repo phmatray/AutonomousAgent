@@ -13,6 +13,7 @@ interface BacklogFiltersProps {
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
   availableLabels: string[];
+  onClearFilters: () => void;
 }
 
 export function BacklogFilters({
@@ -27,10 +28,30 @@ export function BacklogFilters({
   searchQuery,
   onSearchQueryChange,
   availableLabels,
+  onClearFilters,
 }: BacklogFiltersProps) {
+  const hasActiveFilters = Boolean(
+    stateFilter
+    || triageFilter
+    || priorityFilter
+    || labelFilter
+    || searchQuery.trim(),
+  );
+
   return (
     <div className="sticky top-0 z-20 mb-4 rounded-lg border border-gray-700 bg-gray-900/90 backdrop-blur px-3 py-3">
-      <p className="text-xs text-gray-400 mb-2">Filter backlog</p>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-xs text-gray-400">Filter backlog</p>
+        {hasActiveFilters ? (
+          <button
+            type="button"
+            onClick={onClearFilters}
+            className="text-xs text-indigo-300 hover:text-indigo-200 hover:underline"
+          >
+            Reset filters
+          </button>
+        ) : null}
+      </div>
       <div className="flex flex-wrap items-center gap-3">
         <div>
           <label htmlFor="state-filter" className="sr-only">

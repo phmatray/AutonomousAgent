@@ -6,8 +6,10 @@ import { NodeConfigPanel } from '@/features/workflow-editor/nodes/components/Nod
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useEditorWorkflow } from './hooks/useEditorWorkflow';
 import { useEditorInteractions } from './hooks/useEditorInteractions';
+import { useRouter } from '@/lib/router';
 
 export function EditorPage() {
+  const { navigate } = useRouter();
   const fileMenuRef = useRef<HTMLDetailsElement>(null);
   const {
     workflowName,
@@ -159,6 +161,13 @@ export function EditorPage() {
           <span className="text-xs text-text-tertiary" aria-live="polite">{lastSavedLabel}</span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate('dashboard')}
+            className="px-3 py-1.5 text-sm font-medium bg-bg-elevated text-text-secondary border border-border-primary rounded-lg hover:bg-bg-tertiary hover:text-text-primary hover:border-border-hover transition-all"
+          >
+            Workflows
+          </button>
           <input
             ref={importInputRef}
             type="file"
@@ -241,6 +250,17 @@ export function EditorPage() {
           </motion.button>
         </div>
       </header>
+      <div className="px-5 py-2 border-b border-border-primary bg-bg-secondary/80">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-tertiary">
+          <span>Shortcuts: Cmd/Ctrl+S save · Cmd/Ctrl+Enter execute</span>
+          <span>Click a node to edit configuration</span>
+          {selectedNodeId ? (
+            <span className="font-mono text-text-secondary">Selected: {selectedNodeId}</span>
+          ) : (
+            <span>No node selected</span>
+          )}
+        </div>
+      </div>
       {preflightIssues.length > 0 && (
         <section className="px-5 py-2 bg-bg-secondary border-b border-border-primary">
           <div className="flex items-center justify-between mb-2">

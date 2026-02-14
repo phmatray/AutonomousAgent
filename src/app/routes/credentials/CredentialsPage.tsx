@@ -18,7 +18,7 @@ import {
 } from '@/lib/api/claude';
 import { CenteredPage, PageHeader } from '@/app/components/PageLayout';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { Button, SectionCard } from '@/components/ui/primitives';
+import { Badge, Button, Input, SectionCard } from '@/components/ui/primitives';
 
 interface GitHubAuthStatus {
   authenticated: boolean;
@@ -128,6 +128,7 @@ export function CredentialsPage() {
   const [githubCredentials, setGithubCredentials] = useState<GitHubCredential[]>([]);
   const [githubCredentialsError, setGithubCredentialsError] = useState(false);
   const [isRefreshingGitHubCredentials, setIsRefreshingGitHubCredentials] = useState(false);
+  const [credentialSearchQuery, setCredentialSearchQuery] = useState('');
 
   const [claudeStatus, setClaudeStatus] = useState<ClaudeCredentialStatus | null>(null);
   const [claudeStatusError, setClaudeStatusError] = useState(false);
@@ -481,6 +482,22 @@ export function CredentialsPage() {
   }, [auditFromDate, auditToDate]);
 
   const totalAuditPages = Math.max(1, Math.ceil(filteredCredentialAuditEvents.length / auditPageSize));
+  const filteredGitHubCredentials = useMemo(() => {
+    const normalizedSearch = credentialSearchQuery.trim().toLowerCase();
+    if (!normalizedSearch) return githubCredentials;
+    return githubCredentials.filter((credential) =>
+      credential.label.toLowerCase().includes(normalizedSearch)
+      || credential.id.toLowerCase().includes(normalizedSearch)
+      || credential.username.toLowerCase().includes(normalizedSearch),
+    );
+  }, [credentialSearchQuery, githubCredentials]);
+  const hasAuditFilters = Boolean(
+    auditProviderFilter !== 'all'
+    || auditActionFilter !== 'all'
+    || auditResultFilter !== 'all'
+    || auditFromDate
+    || auditToDate,
+  );
   const paginatedCredentialAuditEvents = useMemo(() => {
     const startIndex = (auditPage - 1) * auditPageSize;
     return filteredCredentialAuditEvents.slice(startIndex, startIndex + auditPageSize);
@@ -516,6 +533,19 @@ export function CredentialsPage() {
       <PageHeader
         title="Credentials"
         description="Manage encrypted credentials stored in your local database"
+        metadata={(
+          <div className="flex flex-wrap gap-2">
+            <Badge tone={githubStatus?.authenticated ? 'success' : 'warning'}>
+              GitHub {githubStatus?.authenticated ? 'Connected' : 'Not connected'}
+            </Badge>
+            <Badge tone={claudeStatus?.configured ? 'success' : 'warning'}>
+              Claude {claudeStatus?.configured ? 'Configured' : 'Not configured'}
+            </Badge>
+            <Badge tone="info">
+              Activity events {credentialAuditEvents.length}
+            </Badge>
+          </div>
+        )}
       />
 
       <div className="mb-6">
@@ -715,14 +745,24 @@ export function CredentialsPage() {
               {isRefreshingGitHubCredentials ? 'Refreshing...' : 'Refresh'}
             </Button>
           </div>
+          <Input
+            type="search"
+            value={credentialSearchQuery}
+            onChange={(event) => setCredentialSearchQuery(event.target.value)}
+            placeholder="Search credentials by label, username, or ID"
+            className="mb-3 h-9 text-sm bg-gray-900 border-gray-700"
+            aria-label="Search saved GitHub credentials"
+          />
 
           {githubCredentialsError ? (
             <p className="text-sm text-red-400">Could not load saved GitHub credentials.</p>
           ) : githubCredentials.length === 0 ? (
             <p className="text-sm text-gray-400">No saved GitHub credentials.</p>
+          ) : filteredGitHubCredentials.length === 0 ? (
+            <p className="text-sm text-gray-400">No credential profiles match your search.</p>
           ) : (
             <ul className="space-y-2" aria-label="Saved GitHub credentials">
-              {githubCredentials.map((credential) => (
+              {filteredGitHubCredentials.map((credential) => (
                 <li key={credential.id} className="flex items-center justify-between gap-3 rounded border border-gray-700 bg-gray-900/40 px-3 py-2">
                   <div>
                     <p className="text-sm text-gray-100">
@@ -755,6 +795,21 @@ export function CredentialsPage() {
               Credential Activity
             </h2>
             <div className="flex items-center gap-2">
+              {hasAuditFilters ? (
+                <Button
+                  onClick={() => {
+                    setAuditProviderFilter('all');
+                    setAuditActionFilter('all');
+                    setAuditResultFilter('all');
+                    setAuditFromDate('');
+                    setAuditToDate('');
+                  }}
+                  variant="ghost"
+                  size="sm"
+                >
+                  Reset filters
+                </Button>
+              ) : null}
               <Button
                 onClick={exportFilteredCredentialAudit}
                 disabled={filteredCredentialAuditEvents.length === 0 || hasInvalidAuditDateRange}

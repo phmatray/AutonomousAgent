@@ -182,9 +182,10 @@ impl GitHubClient {
 
         loop {
             issues.extend(Self::normalize_issues(page.items));
-            if let Some(next_page) = page.next.as_ref() {
+            let next_page = page.next.clone();
+            if next_page.is_some() {
                 page = client
-                    .get_page(next_page)
+                    .get_page(&next_page)
                     .await
                     .map_err(|e| AppError::GitHub(format!("Failed to list issues: {}", e)))?
                     .ok_or_else(|| {

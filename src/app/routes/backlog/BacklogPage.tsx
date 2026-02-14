@@ -22,7 +22,12 @@ import { BacklogDetailsPanel } from './BacklogDetailsPanel';
 import { RecommendedIssuesPanel } from './RecommendedIssuesPanel';
 import { buildBacklogRecommendations } from './recommendations';
 import { useRouter } from '@/lib/router';
-import { CenteredPage } from '@/app/components/PageLayout';
+import {
+  CenteredPage,
+  PageEmptyState,
+  PageLoadingState,
+  PageNotice,
+} from '@/app/components/PageLayout';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Button } from '@/components/ui/primitives';
 
@@ -364,6 +369,17 @@ export function BacklogPage() {
     () => viewItems.find((item) => item.id === pendingDeleteItemId) ?? null,
     [viewItems, pendingDeleteItemId],
   );
+  const repositoryLabel = selectedOwner && selectedRepo
+    ? `${selectedOwner}/${selectedRepo}`
+    : undefined;
+  const hasActiveBacklogFilters = Boolean(
+    savedView !== 'all'
+    || stateFilter
+    || triageFilter
+    || priorityFilter
+    || labelFilter
+    || searchQuery.trim(),
+  );
 
   const savedViewCounts = useMemo(
     () => ({
@@ -382,6 +398,7 @@ export function BacklogPage() {
       <BacklogHeader
         itemCount={viewItems.length}
         selectedCount={selectedIds.length}
+        repositoryLabel={repositoryLabel}
         isSyncing={syncMutation.isPending}
         onSync={() => syncMutation.mutate()}
         syncDisabled={!selectedOwner || !selectedRepo}
@@ -432,6 +449,14 @@ export function BacklogPage() {
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
             availableLabels={availableLabels}
+            onClearFilters={() => {
+              setSavedView('all');
+              setStateFilter('');
+              setTriageFilter('');
+              setPriorityFilter('');
+              setLabelFilter('');
+              setSearchQuery('');
+            }}
           />
 
           <RecommendedIssuesPanel
@@ -488,22 +513,62 @@ export function BacklogPage() {
             >
               Archive Selected
             </Button>
+            <Button
+              onClick={() => setSelectedIds([])}
+              disabled={selectedIds.length === 0}
+              variant="ghost"
+              size="sm"
+            >
+              Clear Selection
+            </Button>
             <span className="text-xs text-gray-500 ml-auto">Shortcuts: j/k move, e open, l link</span>
           </div>
         </>
       )}
+      {!selectedOwner || !selectedRepo ? (
+        <PageNotice tone="info" title="Select a repository">
+          Choose a repository before syncing issues or running targeted backlog actions.
+        </PageNotice>
+      ) : null}
+      {linkedWorkflowFeedback ? (
+        <PageNotice tone="success" title="Workflow link update">
+          {linkedWorkflowFeedback}
+        </PageNotice>
+      ) : null}
 
       {syncMutation.isError && (
-        <div className="mb-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-300" role="alert">
+        <PageNotice tone="danger" title="Issue sync failed">
           Failed to sync issues: {String(syncMutation.error)}
-        </div>
+        </PageNotice>
       )}
 
       {backlogLoading ? (
-        <div className="flex items-center justify-center py-20" role="status" aria-label="Loading backlog">
-          <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-          <span className="sr-only">Loading backlog...</span>
-        </div>
+        <PageLoadingState label="Loading backlog" />
+      ) : viewItems.length === 0 ? (
+        <PageEmptyState
+          title="No backlog items in this view"
+          description={
+            hasActiveBacklogFilters
+              ? 'Try resetting filters or selecting a different saved view.'
+              : 'Sync repository issues from GitHub to start triaging work.'
+          }
+          actions={hasActiveBacklogFilters ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setSavedView('all');
+                setStateFilter('');
+                setTriageFilter('');
+                setPriorityFilter('');
+                setLabelFilter('');
+                setSearchQuery('');
+              }}
+            >
+              Reset Filters
+            </Button>
+          ) : undefined}
+        />
       ) : (
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex-1 min-w-0">
