@@ -35,6 +35,7 @@ Fetches open issues from a GitHub repository.
 - Resolves templates before execution.
 - Requires authentication (token or active session).
 - Returns a normalized issue list with selected fields.
+- Automatically paginates through all open issues (not just the first page).
 
 ## Example
 
