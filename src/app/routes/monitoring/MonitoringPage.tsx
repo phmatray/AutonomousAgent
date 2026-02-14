@@ -544,6 +544,7 @@ export function MonitoringPage() {
   const [logDensityMode, setLogDensityMode] = useState<LogDensityMode>(loadLogDensityMode);
   const [isResizing, setIsResizing] = useState(false);
   const [timelineNodes, setTimelineNodes] = useState<TimelineNodeState[]>([]);
+  const [showAdvancedDiagnostics, setShowAdvancedDiagnostics] = useState(false);
 
   useEffect(() => {
     send({ type: 'REQUESTED_EXECUTION_CHANGED', executionId: requestedExecutionId });
@@ -859,107 +860,16 @@ export function MonitoringPage() {
                 )}
               </div>
             </header>
-            <div className="px-4 py-3 border-b border-gray-800 bg-gray-900/80">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                <label className="text-xs text-gray-300">
-                  Export Mode
-                  <select
-                    value={debugBundleExportMode}
-                    onChange={(event) => setDebugBundleExportMode(
-                      event.target.value as DebugBundleExportMode,
-                    )}
-                    className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
-                  >
-                    <option value="full">Full bundle</option>
-                    <option value="credentialFiltered">Filter credential activity</option>
-                  </select>
-                </label>
-
-                {debugBundleExportMode === 'credentialFiltered' && (
-                  <>
-                    <label className="text-xs text-gray-300">
-                      Provider
-                      <select
-                        value={bundleCredentialProviderFilter}
-                        onChange={(event) => setBundleCredentialProviderFilter(event.target.value)}
-                        className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
-                      >
-                        <option value="all">All providers</option>
-                        <option value="github">GitHub</option>
-                        <option value="claude">Claude</option>
-                      </select>
-                    </label>
-
-                    <label className="text-xs text-gray-300">
-                      Action
-                      <select
-                        value={bundleCredentialActionFilter}
-                        onChange={(event) => setBundleCredentialActionFilter(event.target.value)}
-                        className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
-                      >
-                        <option value="all">All actions</option>
-                        <option value="save_token">save_token</option>
-                        <option value="delete_token">delete_token</option>
-                        <option value="delete_credential">delete_credential</option>
-                        <option value="verify_reveal">verify_reveal</option>
-                        <option value="save_credential">save_credential</option>
-                      </select>
-                    </label>
-
-                    <label className="text-xs text-gray-300">
-                      Result
-                      <select
-                        value={bundleCredentialResultFilter}
-                        onChange={(event) => setBundleCredentialResultFilter(
-                          event.target.value as DebugBundleResultFilter,
-                        )}
-                        className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
-                      >
-                        <option value="all">All results</option>
-                        <option value="success">Success</option>
-                        <option value="failure">Failure</option>
-                      </select>
-                    </label>
-
-                    <label className="text-xs text-gray-300">
-                      From date
-                      <input
-                        type="date"
-                        value={bundleCredentialFromDate}
-                        onChange={(event) => setBundleCredentialFromDate(event.target.value)}
-                        className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
-                      />
-                    </label>
-
-                    <label className="text-xs text-gray-300">
-                      To date
-                      <input
-                        type="date"
-                        value={bundleCredentialToDate}
-                        onChange={(event) => setBundleCredentialToDate(event.target.value)}
-                        className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
-                      />
-                    </label>
-
-                    <label className="text-xs text-gray-300">
-                      Max events
-                      <input
-                        type="number"
-                        min={1}
-                        max={MAX_DEBUG_BUNDLE_CREDENTIAL_EVENTS}
-                        value={bundleCredentialLimit}
-                        onChange={(event) => setBundleCredentialLimit(event.target.value)}
-                        className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
-                      />
-                    </label>
-                  </>
-                )}
-              </div>
-              {hasInvalidBundleDateRange && (
-                <p className="mt-2 text-xs text-red-400" role="alert">
-                  Credential activity date range is invalid: start date must be before end date.
-                </p>
-              )}
+            <div className="px-4 py-2 border-b border-gray-800 bg-gray-900/60">
+              <button
+                type="button"
+                onClick={() => setShowAdvancedDiagnostics((value) => !value)}
+                className="w-full rounded border border-gray-700 bg-gray-900 px-3 py-2 text-left text-sm text-gray-200 hover:border-indigo-500 hover:text-indigo-200 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                aria-expanded={showAdvancedDiagnostics}
+                aria-controls="advanced-diagnostics-panel"
+              >
+                {showAdvancedDiagnostics ? 'Hide advanced diagnostics' : 'Show advanced diagnostics'}
+              </button>
             </div>
             {(logsError || cancelError) && (
               <div className="px-4 py-2 border-b border-gray-800 bg-red-900/20 text-xs text-red-300">
@@ -1005,9 +915,115 @@ export function MonitoringPage() {
                 )}
               </div>
             )}
+            {showAdvancedDiagnostics && (
+              <section id="advanced-diagnostics-panel" className="border-b border-gray-800 bg-gray-900/80">
+                <div className="px-4 py-3 border-b border-gray-800">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <label className="text-xs text-gray-300">
+                      Export Mode
+                      <select
+                        value={debugBundleExportMode}
+                        onChange={(event) => setDebugBundleExportMode(
+                          event.target.value as DebugBundleExportMode,
+                        )}
+                        className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                      >
+                        <option value="full">Full bundle</option>
+                        <option value="credentialFiltered">Filter credential activity</option>
+                      </select>
+                    </label>
+
+                    {debugBundleExportMode === 'credentialFiltered' && (
+                      <>
+                        <label className="text-xs text-gray-300">
+                          Provider
+                          <select
+                            value={bundleCredentialProviderFilter}
+                            onChange={(event) => setBundleCredentialProviderFilter(event.target.value)}
+                            className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                          >
+                            <option value="all">All providers</option>
+                            <option value="github">GitHub</option>
+                            <option value="claude">Claude</option>
+                          </select>
+                        </label>
+
+                        <label className="text-xs text-gray-300">
+                          Action
+                          <select
+                            value={bundleCredentialActionFilter}
+                            onChange={(event) => setBundleCredentialActionFilter(event.target.value)}
+                            className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                          >
+                            <option value="all">All actions</option>
+                            <option value="save_token">save_token</option>
+                            <option value="delete_token">delete_token</option>
+                            <option value="delete_credential">delete_credential</option>
+                            <option value="verify_reveal">verify_reveal</option>
+                            <option value="save_credential">save_credential</option>
+                          </select>
+                        </label>
+
+                        <label className="text-xs text-gray-300">
+                          Result
+                          <select
+                            value={bundleCredentialResultFilter}
+                            onChange={(event) => setBundleCredentialResultFilter(
+                              event.target.value as DebugBundleResultFilter,
+                            )}
+                            className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                          >
+                            <option value="all">All results</option>
+                            <option value="success">Success</option>
+                            <option value="failure">Failure</option>
+                          </select>
+                        </label>
+
+                        <label className="text-xs text-gray-300">
+                          From date
+                          <input
+                            type="date"
+                            value={bundleCredentialFromDate}
+                            onChange={(event) => setBundleCredentialFromDate(event.target.value)}
+                            className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                          />
+                        </label>
+
+                        <label className="text-xs text-gray-300">
+                          To date
+                          <input
+                            type="date"
+                            value={bundleCredentialToDate}
+                            onChange={(event) => setBundleCredentialToDate(event.target.value)}
+                            className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                          />
+                        </label>
+
+                        <label className="text-xs text-gray-300">
+                          Max events
+                          <input
+                            type="number"
+                            min={1}
+                            max={MAX_DEBUG_BUNDLE_CREDENTIAL_EVENTS}
+                            value={bundleCredentialLimit}
+                            onChange={(event) => setBundleCredentialLimit(event.target.value)}
+                            className="mt-1 w-full rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-xs"
+                          />
+                        </label>
+                      </>
+                    )}
+                  </div>
+                  {hasInvalidBundleDateRange && (
+                    <p className="mt-2 text-xs text-red-400" role="alert">
+                      Credential activity date range is invalid: start date must be before end date.
+                    </p>
+                  )}
+                </div>
+                <NodeOutputsPanel contextEntries={contextEntries} />
+                <NodeRunInspector contextEntries={contextEntries} />
+              </section>
+            )}
             <NodeTimelinePanel nodes={timelineNodes} />
-            <NodeOutputsPanel contextEntries={contextEntries} />
-            <NodeRunInspector contextEntries={contextEntries} />
             <LogViewer
               logs={allLogs}
               isStreaming={isStreaming}

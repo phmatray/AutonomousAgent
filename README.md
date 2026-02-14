@@ -210,6 +210,14 @@ Required token scopes: `repo`, `workflow`.
 
 The application automatically restores your GitHub session on startup from the stored token.
 
+### Monitoring UI
+
+The monitoring route defaults to a high-signal execution view:
+
+- Execution timeline and log stream stay visible by default.
+- Verbose inspectors and debug bundle filter controls live under **Advanced diagnostics**.
+- Debug bundle export remains available from the execution header.
+
 ## Architecture
 
 For a detailed architecture overview, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
