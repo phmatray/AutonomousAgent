@@ -38,6 +38,7 @@ import {
   selectItemsForView,
   type SavedView,
 } from '@/features/backlog/domain/views';
+import { queryKeys } from '@/lib/query-keys';
 
 export function BacklogPage() {
   const { params, navigate } = useRouter();
@@ -59,22 +60,21 @@ export function BacklogPage() {
   const selectedItemId = params.get('item');
 
   const { data: repositories = [], isLoading: reposLoading } = useQuery<GitHubRepo[]>({
-    queryKey: ['repositories'],
+    queryKey: queryKeys.repositories,
     queryFn: listRepositories,
     retry: false,
   });
 
   const { data: backlogItems = [], isLoading: backlogLoading } = useQuery<BacklogItem[]>({
-    queryKey: [
-      'backlog-items',
-      selectedOwner,
-      selectedRepo,
+    queryKey: queryKeys.backlogItems({
+      owner: selectedOwner,
+      repo: selectedRepo,
       stateFilter,
       triageFilter,
       priorityFilter,
       labelFilter,
       searchQuery,
-    ],
+    }),
     queryFn: () =>
       listBacklogItemsForView({
         owner: selectedOwner || undefined,

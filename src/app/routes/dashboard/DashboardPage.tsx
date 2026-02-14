@@ -31,6 +31,7 @@ import {
   runPublishedWorkflow,
   toggleWorkflowPublishStatus,
 } from '@/features/dashboard/application/workflow-actions';
+import { queryKeys } from '@/lib/query-keys';
 
 function StatusBadge({ status }: { status: string }) {
   const tone = status === 'published' ? 'success' : 'default';
@@ -457,7 +458,7 @@ export function DashboardPage() {
     isLoading: isExecutionHealthLoading,
     isError: isExecutionHealthError,
   } = useQuery({
-    queryKey: ['dashboard-execution-health'],
+    queryKey: queryKeys.dashboardExecutionHealth,
     queryFn: async () => (await listExecutions()) ?? [],
     enabled: !isLoading && !loadError,
     retry: false,
@@ -470,7 +471,7 @@ export function DashboardPage() {
   useEffect(() => {
     let unlisten = () => {};
     onWorkflowExecutionStatus(() => {
-      queryClient.invalidateQueries({ queryKey: ['dashboard-execution-health'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboardExecutionHealth });
     }).then((fn) => {
       unlisten = fn;
     });

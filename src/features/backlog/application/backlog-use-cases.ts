@@ -10,6 +10,7 @@ import {
   type BacklogTriagePatch,
 } from '@/lib/api/backlog';
 import type { BacklogPriority, BacklogTriageStatus } from '@/types/workflow';
+import { queryKeys } from '@/lib/query-keys';
 
 export function listBacklogItemsForView(filters: BacklogFilters) {
   return listBacklogItems(filters);
@@ -43,5 +44,5 @@ export function bulkUpdateTriage(
 }
 
 export function invalidateBacklogQueries(queryClient: QueryClient): void {
-  queryClient.invalidateQueries({ queryKey: ['backlog-items'] });
+  queryClient.invalidateQueries({ queryKey: queryKeys.backlogItemsRoot });
 }
