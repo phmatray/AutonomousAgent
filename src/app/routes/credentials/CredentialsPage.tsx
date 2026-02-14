@@ -1,108 +1,44 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  authenticateGitHub,
-  deleteGitHubCredential,
-  deleteGitHubToken,
-  getAuthStatus,
-  getSavedGitHubToken,
-  listGitHubCredentials,
-  listCredentialAuditEvents,
   type CredentialAuditEvent,
   type GitHubCredential,
-  verifyGitHubToken,
 } from '@/lib/api/github';
 import {
-  getClaudeCredentialStatus,
-  saveClaudeCredential,
   type ClaudeCredentialStatus,
 } from '@/lib/api/claude';
 import { CenteredPage, PageHeader } from '@/app/components/PageLayout';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Badge, Button, Input, SectionCard } from '@/components/ui/primitives';
-
-interface GitHubAuthStatus {
-  authenticated: boolean;
-  username?: string;
-}
+import {
+  fetchClaudeStatus,
+  fetchCredentialAuditEvents,
+  fetchGitHubAuthStatus,
+  fetchGitHubCredentials,
+  removeGitHubCredential,
+  removeGitHubToken,
+  restoreSavedGitHubToken,
+  saveClaudeApiCredential,
+  saveGitHubToken,
+  type GitHubAuthStatus,
+  verifyGitHubTokenForReveal,
+} from '@/features/credentials/application/credentials-use-cases';
+import { triggerCredentialAuditDownload } from '@/features/credentials/application/export-audit';
+import {
+  AUDIT_PAGE_SIZE_OPTIONS,
+  filterCredentialAuditEvents,
+  filterGitHubCredentialsByQuery,
+  formatAuditTimestamp,
+  hasInvalidAuditDateRange as isAuditDateRangeInvalid,
+  toAuditActionLabel,
+  type AuditResultFilter,
+} from '@/features/credentials/domain/audit';
+import {
+  getInitialGitHubTokenAutofill,
+  persistGitHubTokenAutofill,
+} from '@/features/credentials/domain/token-autofill';
 
 type SaveState = 'idle' | 'success' | 'error';
-type AuditResultFilter = 'all' | 'success' | 'failure';
 type CredentialsTab = 'github' | 'activity' | 'claude';
-const GITHUB_TOKEN_AUTOFILL_STORAGE_KEY = 'credentials.github.token_autofill';
-const CREDENTIAL_AUDIT_FETCH_LIMIT = 200;
-const AUDIT_PAGE_SIZE_OPTIONS = [5, 10, 20, 50] as const;
-
-function getBrowserStorage(): Pick<Storage, 'getItem' | 'setItem'> | null {
-  const storage = window.localStorage as Partial<Storage> | undefined;
-  if (!storage) return null;
-  if (typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') {
-    return null;
-  }
-  return storage as Pick<Storage, 'getItem' | 'setItem'>;
-}
-
-function getInitialGitHubTokenAutofill(): boolean {
-  const raw = getBrowserStorage()?.getItem(GITHUB_TOKEN_AUTOFILL_STORAGE_KEY);
-  return raw !== 'false';
-}
-
-function formatAuditTimestamp(timestamp: string): string {
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return timestamp;
-
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date);
-}
-
-function toAuditActionLabel(event: CredentialAuditEvent): string {
-  const actionMap: Record<string, string> = {
-    save_token: 'Saved token',
-    delete_token: 'Removed token',
-    delete_credential: 'Removed credential',
-    verify_reveal: 'Verified reveal',
-    save_credential: 'Saved credential',
-  };
-
-  return actionMap[event.action] ?? event.action;
-}
-
-function toAuditDateBoundary(dateValue: string, endOfDay: boolean): Date | null {
-  const trimmed = dateValue.trim();
-  if (!trimmed) return null;
-  const date = new Date(`${trimmed}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function triggerCredentialAuditDownload(events: CredentialAuditEvent[], filters: Record<string, string>) {
-  if (typeof document === 'undefined') return;
-
-  const now = new Date();
-  const pad = (value: number) => String(value).padStart(2, '0');
-  const fileName = `credential-audit-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.json`;
-
-  const payload = JSON.stringify(
-    {
-      exported_at: now.toISOString(),
-      filters,
-      events,
-    },
-    null,
-    2,
-  );
-
-  const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.style.display = 'none';
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
-}
 
 export function CredentialsPage() {
   const [activeTab, setActiveTab] = useState<CredentialsTab>('github');
@@ -155,7 +91,7 @@ export function CredentialsPage() {
   const refreshGitHubStatus = useCallback(async () => {
     setIsRefreshingGithub(true);
     try {
-      const status = await getAuthStatus();
+      const status = await fetchGitHubAuthStatus();
       setGithubStatus(status);
       setGithubStatusError(false);
     } catch {
@@ -168,7 +104,7 @@ export function CredentialsPage() {
   const refreshCredentialAudit = useCallback(async () => {
     setIsRefreshingCredentialAudit(true);
     try {
-      const events = await listCredentialAuditEvents(CREDENTIAL_AUDIT_FETCH_LIMIT);
+      const events = await fetchCredentialAuditEvents();
       setCredentialAuditEvents(events);
       setCredentialAuditError(false);
     } catch {
@@ -181,7 +117,7 @@ export function CredentialsPage() {
   const refreshGitHubCredentials = useCallback(async () => {
     setIsRefreshingGitHubCredentials(true);
     try {
-      const credentials = await listGitHubCredentials();
+      const credentials = await fetchGitHubCredentials();
       setGithubCredentials(credentials);
       setGithubCredentialsError(false);
     } catch {
@@ -194,7 +130,7 @@ export function CredentialsPage() {
   const refreshClaudeStatus = useCallback(async () => {
     setIsRefreshingClaude(true);
     try {
-      const status = await getClaudeCredentialStatus();
+      const status = await fetchClaudeStatus();
       setClaudeStatus(status);
       setClaudeStatusError(false);
       if (status.account_label) {
@@ -214,7 +150,7 @@ export function CredentialsPage() {
     }
 
     try {
-      const token = await getSavedGitHubToken();
+      const token = await restoreSavedGitHubToken();
       setGithubToken(token);
       setRequiresGithubRevealVerification(token.trim().length > 0);
       setShowGithubToken(false);
@@ -271,7 +207,7 @@ export function CredentialsPage() {
     setGithubSaveState('idle');
 
     try {
-      await authenticateGitHub(token);
+      await saveGitHubToken(token);
       setGithubToken(token);
       setRequiresGithubRevealVerification(false);
       setShowGithubToken(false);
@@ -312,7 +248,7 @@ export function CredentialsPage() {
     setGithubRevealState('idle');
 
     try {
-      await verifyGitHubToken(token);
+      await verifyGitHubTokenForReveal(token);
       setRequiresGithubRevealVerification(false);
       setShowGithubToken(true);
       setGithubRevealState('success');
@@ -331,7 +267,7 @@ export function CredentialsPage() {
 
   const handleGitHubTokenAutofillToggle = (enabled: boolean) => {
     setIsGithubTokenAutofillEnabled(enabled);
-    getBrowserStorage()?.setItem(GITHUB_TOKEN_AUTOFILL_STORAGE_KEY, String(enabled));
+    persistGitHubTokenAutofill(enabled);
     if (!enabled) {
       setGithubToken('');
       setRequiresGithubRevealVerification(false);
@@ -345,7 +281,7 @@ export function CredentialsPage() {
     setGithubDeleteState('idle');
 
     try {
-      await deleteGitHubToken();
+      await removeGitHubToken();
       setGithubToken('');
       setRequiresGithubRevealVerification(false);
       setShowGithubToken(false);
@@ -377,7 +313,7 @@ export function CredentialsPage() {
     setGithubDeleteState('idle');
 
     try {
-      await deleteGitHubCredential(selectedCredentialForDelete.id);
+      await removeGitHubCredential(selectedCredentialForDelete.id);
       setGithubToken('');
       setShowGithubToken(false);
       setRequiresGithubRevealVerification(false);
@@ -408,7 +344,7 @@ export function CredentialsPage() {
     setClaudeSaveState('idle');
 
     try {
-      const status = await saveClaudeCredential({
+      const status = await saveClaudeApiCredential({
         apiKey,
         accountLabel: claudeAccountLabel,
       });
@@ -437,32 +373,12 @@ export function CredentialsPage() {
   }, [credentialAuditEvents]);
 
   const filteredCredentialAuditEvents = useMemo(() => {
-    const fromBoundary = toAuditDateBoundary(auditFromDate, false);
-    const toBoundary = toAuditDateBoundary(auditToDate, true);
-
-    return credentialAuditEvents.filter((event) => {
-      if (auditProviderFilter !== 'all' && event.provider !== auditProviderFilter) {
-        return false;
-      }
-      if (auditActionFilter !== 'all' && event.action !== auditActionFilter) {
-        return false;
-      }
-      if (auditResultFilter === 'success' && !event.success) {
-        return false;
-      }
-      if (auditResultFilter === 'failure' && event.success) {
-        return false;
-      }
-      const eventTimestamp = new Date(event.timestamp);
-      if (!Number.isNaN(eventTimestamp.getTime())) {
-        if (fromBoundary && eventTimestamp < fromBoundary) {
-          return false;
-        }
-        if (toBoundary && eventTimestamp > toBoundary) {
-          return false;
-        }
-      }
-      return true;
+    return filterCredentialAuditEvents(credentialAuditEvents, {
+      provider: auditProviderFilter,
+      action: auditActionFilter,
+      result: auditResultFilter,
+      fromDate: auditFromDate,
+      toDate: auditToDate,
     });
   }, [
     credentialAuditEvents,
@@ -474,22 +390,12 @@ export function CredentialsPage() {
   ]);
 
   const hasInvalidAuditDateRange = useMemo(() => {
-    const fromBoundary = toAuditDateBoundary(auditFromDate, false);
-    const toBoundary = toAuditDateBoundary(auditToDate, true);
-    return Boolean(
-      fromBoundary && toBoundary && fromBoundary.getTime() > toBoundary.getTime(),
-    );
+    return isAuditDateRangeInvalid(auditFromDate, auditToDate);
   }, [auditFromDate, auditToDate]);
 
   const totalAuditPages = Math.max(1, Math.ceil(filteredCredentialAuditEvents.length / auditPageSize));
   const filteredGitHubCredentials = useMemo(() => {
-    const normalizedSearch = credentialSearchQuery.trim().toLowerCase();
-    if (!normalizedSearch) return githubCredentials;
-    return githubCredentials.filter((credential) =>
-      credential.label.toLowerCase().includes(normalizedSearch)
-      || credential.id.toLowerCase().includes(normalizedSearch)
-      || credential.username.toLowerCase().includes(normalizedSearch),
-    );
+    return filterGitHubCredentialsByQuery(githubCredentials, credentialSearchQuery);
   }, [credentialSearchQuery, githubCredentials]);
   const hasAuditFilters = Boolean(
     auditProviderFilter !== 'all'

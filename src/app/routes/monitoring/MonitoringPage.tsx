@@ -7,7 +7,7 @@ import type {
   ExecutionStatus,
   RuntimeNodeEvent,
 } from '@/types/workflow';
-import { copyDebugBundle, type DebugBundleCredentialAuditFilter } from '@/lib/api/workflow';
+import type { DebugBundleCredentialAuditFilter } from '@/lib/api/workflow';
 import { useRouter } from '@/lib/router';
 import { monitoringMachine } from './monitoring-machine';
 import { Badge, Input } from '@/components/ui/primitives';
@@ -17,6 +17,28 @@ import {
   onWorkflowNodeFinished,
   onWorkflowNodeStarted,
 } from '@/lib/events/workflow-events';
+import {
+  clampSidebarWidth,
+  countExecutionsByStatus,
+  EXECUTION_STATUS_FILTERS,
+  filterExecutions,
+  formatExportError,
+  getExecutionContextEntries,
+  loadLogDensityMode,
+  loadSidebarWidth,
+  LOG_DENSITY_STORAGE_KEY,
+  MAX_DEBUG_BUNDLE_CREDENTIAL_EVENTS,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_WIDTH_STORAGE_KEY,
+  toDateBoundaryIso,
+  toTimelineState,
+  type ExecutionContextEntry,
+  type LogDensityMode,
+  type TimelineNodeState,
+  upsertTimelineNode,
+} from '@/features/monitoring/domain/monitoring';
+import { exportDebugBundle } from '@/features/monitoring/application/debug-bundle';
 
 const STATUS_STYLES: Record<ExecutionStatus, string> = {
   IDLE: 'bg-gray-700 text-gray-300',
@@ -35,195 +57,8 @@ const LOG_LEVEL_STYLES: Record<string, string> = {
   ERROR: 'text-red-400',
 };
 
-const SIDEBAR_WIDTH_STORAGE_KEY = 'autonomous-agent.monitoring.sidebar-width';
-const LOG_DENSITY_STORAGE_KEY = 'autonomous-agent.monitoring.log-density';
-const SIDEBAR_MIN_WIDTH = 240;
-const SIDEBAR_MAX_WIDTH = 480;
-const SIDEBAR_DEFAULT_WIDTH = 288;
-const MAX_DEBUG_BUNDLE_CREDENTIAL_EVENTS = 200;
-const LOG_DENSITY_MODES = ['compact', 'expanded'] as const;
-const EXECUTION_STATUS_FILTERS: Array<'ALL' | ExecutionStatus> = [
-  'ALL',
-  'RUNNING',
-  'FAILED',
-  'COMPLETED',
-  'CANCELLED',
-  'SCHEDULED',
-  'PAUSED',
-  'IDLE',
-];
-
 type DebugBundleExportMode = 'full' | 'credentialFiltered';
 type DebugBundleResultFilter = 'all' | 'success' | 'failure';
-type LogDensityMode = (typeof LOG_DENSITY_MODES)[number];
-
-function clampSidebarWidth(width: number): number {
-  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
-}
-
-function loadSidebarWidth(): number {
-  if (typeof window === 'undefined') return SIDEBAR_DEFAULT_WIDTH;
-  const rawValue = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
-  if (!rawValue) return SIDEBAR_DEFAULT_WIDTH;
-
-  const parsedValue = Number.parseInt(rawValue, 10);
-  if (Number.isNaN(parsedValue)) return SIDEBAR_DEFAULT_WIDTH;
-
-  return clampSidebarWidth(parsedValue);
-}
-
-function loadLogDensityMode(): LogDensityMode {
-  if (typeof window === 'undefined') return 'compact';
-  const rawValue = window.localStorage.getItem(LOG_DENSITY_STORAGE_KEY);
-  if (rawValue === 'expanded') return 'expanded';
-  return 'compact';
-}
-
-interface ExecutionContextEntry {
-  node_id?: string;
-  status?: string;
-  started_at?: string;
-  completed_at?: string;
-  duration_ms?: number;
-  retry_count?: number;
-  policy?: {
-    max_retries?: number;
-    retry_delay_ms?: number;
-    backoff?: string;
-    timeout_secs?: number | null;
-    continue_on_error?: boolean;
-  };
-  resolved_config?: Record<string, unknown> | null;
-  input?: Record<string, unknown> | null;
-  output?: Record<string, unknown> | null;
-  error?: string | null;
-}
-
-interface TimelineNodeState {
-  executionId: string;
-  workflowId: string;
-  nodeId: string;
-  nodeType: string;
-  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'SKIPPED';
-  startedAt: string;
-  completedAt?: string | null;
-  durationMs?: number | null;
-  retryCount?: number | null;
-  error?: string | null;
-}
-
-function formatExportError(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return 'Failed to export debug bundle';
-  }
-}
-
-function toDateBoundaryIso(localDate: string, endOfDay: boolean): string | null {
-  const trimmed = localDate.trim();
-  if (!trimmed) return null;
-
-  const date = new Date(`${trimmed}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}`);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
-}
-
-async function copyTextToClipboard(text: string): Promise<void> {
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return;
-    } catch {
-      // Fall through to legacy copy API for environments that block clipboard permissions.
-    }
-  }
-
-  if (typeof document === 'undefined' || !document.body) {
-    throw new Error('Clipboard is unavailable in this context');
-  }
-
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', '');
-  textarea.style.position = 'fixed';
-  textarea.style.top = '-9999px';
-  textarea.style.left = '-9999px';
-
-  document.body.appendChild(textarea);
-  textarea.focus();
-  textarea.select();
-
-  const copied = document.execCommand('copy');
-  document.body.removeChild(textarea);
-
-  if (!copied) {
-    throw new Error('Failed to copy debug bundle to clipboard');
-  }
-}
-
-function downloadDebugBundle(text: string): void {
-  if (typeof document === 'undefined') {
-    throw new Error('Unable to export debug bundle in this context');
-  }
-
-  const now = new Date();
-  const pad = (value: number) => String(value).padStart(2, '0');
-  const fileName = `debug-bundle-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.json`;
-
-  const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.style.display = 'none';
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
-}
-
-function getExecutionContextEntries(context: unknown): ExecutionContextEntry[] {
-  if (!Array.isArray(context)) return [];
-  return context.filter((entry): entry is ExecutionContextEntry =>
-    typeof entry === 'object' && entry !== null,
-  );
-}
-
-function toTimelineState(entry: ExecutionContextEntry): TimelineNodeState {
-  return {
-    executionId: '',
-    workflowId: '',
-    nodeId: entry.node_id ?? 'unknown',
-    nodeType: 'node',
-    status: (entry.status as TimelineNodeState['status']) ?? 'SKIPPED',
-    startedAt: entry.started_at ?? new Date().toISOString(),
-    completedAt: entry.completed_at ?? null,
-    durationMs: entry.duration_ms ?? null,
-    retryCount: entry.retry_count ?? null,
-    error: entry.error ?? null,
-  };
-}
-
-function upsertTimelineNode(
-  nodes: TimelineNodeState[],
-  incoming: TimelineNodeState,
-): TimelineNodeState[] {
-  const index = nodes.findIndex((node) => node.nodeId === incoming.nodeId);
-  if (index < 0) {
-    return [...nodes, incoming];
-  }
-
-  const next = [...nodes];
-  next[index] = {
-    ...next[index],
-    ...incoming,
-    startedAt: incoming.startedAt || next[index].startedAt,
-  };
-  return next;
-}
 
 function NodeOutputsPanel({ contextEntries }: { contextEntries: ExecutionContextEntry[] }) {
   const completedWithOutput = contextEntries.filter(
@@ -637,34 +472,14 @@ export function MonitoringPage() {
   const allLogs = [...logs, ...streamingLogs];
   const selectedExecution = executions.find((e) => e.id === selectedExecutionId);
   const isStreaming = selectedExecution?.status === 'RUNNING';
-  const executionStatusCounts = useMemo(() => {
-    const counts: Record<ExecutionStatus, number> = {
-      IDLE: 0,
-      SCHEDULED: 0,
-      RUNNING: 0,
-      PAUSED: 0,
-      COMPLETED: 0,
-      FAILED: 0,
-      CANCELLED: 0,
-    };
-    for (const execution of executions) {
-      counts[execution.status] += 1;
-    }
-    return counts;
-  }, [executions]);
-  const filteredExecutions = useMemo(() => {
-    const normalizedSearch = executionSearchQuery.trim().toLowerCase();
-    return executions.filter((execution) => {
-      if (executionStatusFilter !== 'ALL' && execution.status !== executionStatusFilter) {
-        return false;
-      }
-      if (!normalizedSearch) return true;
-
-      return execution.id.toLowerCase().includes(normalizedSearch)
-        || execution.workflowId.toLowerCase().includes(normalizedSearch)
-        || execution.status.toLowerCase().includes(normalizedSearch);
-    });
-  }, [executions, executionSearchQuery, executionStatusFilter]);
+  const executionStatusCounts = useMemo(
+    () => countExecutionsByStatus(executions),
+    [executions],
+  );
+  const filteredExecutions = useMemo(
+    () => filterExecutions(executions, executionSearchQuery, executionStatusFilter),
+    [executionSearchQuery, executionStatusFilter, executions],
+  );
   const contextEntries = useMemo(
     () => getExecutionContextEntries(selectedExecution?.context),
     [selectedExecution?.context],
@@ -737,12 +552,10 @@ export function MonitoringPage() {
 
     setCopyState({ isCopying: true, copied: 'none', error: null });
     try {
-      const result = await copyDebugBundle(selectedExecutionId, credentialAuditFilter);
-      try {
-        await copyTextToClipboard(result.bundleJson);
+      const mode = await exportDebugBundle(selectedExecutionId, credentialAuditFilter);
+      if (mode === 'clipboard') {
         setCopyState({ isCopying: false, copied: 'clipboard', error: null });
-      } catch {
-        downloadDebugBundle(result.bundleJson);
+      } else {
         setCopyState({ isCopying: false, copied: 'download', error: null });
       }
     } catch (error) {
