@@ -12,7 +12,6 @@ import { BacklogFilters } from './BacklogFilters';
 import { BacklogTable } from './BacklogTable';
 import { BacklogDetailsPanel } from './BacklogDetailsPanel';
 import { RecommendedIssuesPanel } from './RecommendedIssuesPanel';
-import { buildBacklogRecommendations } from './recommendations';
 import { useRouter } from '@/lib/router';
 import {
   CenteredPage,
@@ -38,6 +37,7 @@ import {
   selectItemsForView,
   type SavedView,
 } from '@/features/backlog/domain/views';
+import { buildBacklogRecommendations } from '@/features/backlog/domain/recommendations';
 import { queryKeys } from '@/lib/query-keys';
 
 export function BacklogPage() {

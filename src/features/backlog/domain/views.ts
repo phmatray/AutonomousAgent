@@ -1,5 +1,5 @@
 import type { BacklogItem } from '@/types/workflow';
-import type { BacklogRecommendation } from '@/app/routes/backlog/recommendations';
+import type { BacklogRecommendation } from '@/features/backlog/domain/recommendations';
 
 export type SavedView = 'all' | 'recommended' | 'now' | 'next' | 'blocked' | 'unlinked';
 

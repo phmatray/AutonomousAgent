@@ -1,5 +1,5 @@
 import type { BacklogItem } from '@/types/workflow';
-import type { BacklogRecommendation } from './recommendations';
+import type { BacklogRecommendation } from '@/features/backlog/domain/recommendations';
 import { Button } from '@/components/ui/primitives';
 
 interface RecommendedIssuesPanelProps {
