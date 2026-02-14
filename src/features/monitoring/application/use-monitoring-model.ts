@@ -2,7 +2,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMachine } from '@xstate/react';
 import type { DebugBundleCredentialAuditFilter } from '@/lib/api/workflow';
-import { monitoringMachine } from '@/app/routes/monitoring/monitoring-machine';
+import { monitoringMachine } from '@/features/monitoring/application/monitoring-machine';
 import {
   onExecutionLogStream,
   onWorkflowExecutionStatus,
