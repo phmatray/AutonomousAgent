@@ -3,7 +3,6 @@ import { Clock3, PlayCircle, Trash2 } from 'lucide-react';
 import type { Workflow } from '@/types/workflow';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import {
   CenteredPage,
@@ -13,23 +12,25 @@ import {
   PageNotice,
 } from '@/app/components/PageLayout';
 import { useWorkflowCatalogActorRef, WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
-import { executeWorkflow, listExecutions, updateWorkflow } from '@/lib/api/workflow';
+import { listExecutions } from '@/lib/api/workflow';
 import { Badge, Button, Input, SectionCard } from '@/components/ui/primitives';
-
-type SortOption = 'updated-desc' | 'name-asc' | 'name-desc' | 'nodes-desc';
-type WorkflowStatus = 'draft' | 'published';
-type TriggerMode = 'manual' | 'cron' | 'webhook' | 'state' | 'unknown';
-type VisibilityFilter = 'all' | 'published' | 'draft';
-type TriggerFilter = 'all' | 'scheduled' | 'on-demand';
-
-interface TriggerDetails {
-  mode: TriggerMode;
-  label: string;
-  isScheduled: boolean;
-  schedule?: string;
-  timezone?: string;
-  nextRunAt?: string;
-}
+import { onWorkflowExecutionStatus } from '@/lib/events/workflow-events';
+import {
+  filterAndSortWorkflows,
+  formatNextRunTimestamp,
+  formatWorkflowUpdatedAt,
+  getWorkflowStatus,
+  getWorkflowTriggerDetails,
+  type SortOption,
+  type TriggerDetails,
+  type TriggerFilter,
+  type TriggerMode,
+  type VisibilityFilter,
+} from '@/features/dashboard/domain/workflows';
+import {
+  runPublishedWorkflow,
+  toggleWorkflowPublishStatus,
+} from '@/features/dashboard/application/workflow-actions';
 
 function StatusBadge({ status }: { status: string }) {
   const tone = status === 'published' ? 'success' : 'default';
@@ -40,135 +41,6 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function getWorkflowStatus(workflow: Workflow): WorkflowStatus {
-  const rawStatus = (workflow as Workflow & { status?: string }).status?.toLowerCase();
-  if (rawStatus === 'published' || rawStatus === 'draft') {
-    return rawStatus;
-  }
-  return 'draft';
-}
-
-function getWorkflowTriggerDetails(workflow: Workflow): TriggerDetails {
-  const persistedSchedule = workflow.schedule;
-  if (persistedSchedule?.triggerType) {
-    const triggerType = persistedSchedule.triggerType.toLowerCase();
-    if (triggerType === 'cron') {
-      return {
-        mode: 'cron',
-        label: 'Cron schedule',
-        isScheduled: true,
-        schedule: persistedSchedule.cronExpression,
-        timezone: persistedSchedule.timezone,
-        nextRunAt: persistedSchedule.nextRunAt,
-      };
-    }
-    if (triggerType === 'webhook') {
-      return {
-        mode: 'webhook',
-        label: 'Webhook trigger',
-        isScheduled: false,
-      };
-    }
-    if (triggerType === 'state_idle') {
-      return {
-        mode: 'state',
-        label: 'State trigger',
-        isScheduled: false,
-      };
-    }
-    if (triggerType === 'manual') {
-      return {
-        mode: 'manual',
-        label: 'On demand',
-        isScheduled: false,
-      };
-    }
-  }
-
-  const triggerNode = workflow.nodes.find(
-    (node) => node.type === 'trigger.cron' || node.type === 'trigger',
-  );
-
-  if (!triggerNode) {
-    return {
-      mode: 'manual',
-      label: 'On demand',
-      isScheduled: false,
-    };
-  }
-
-  const config = triggerNode.config as Record<string, unknown> | undefined;
-  const schedule = typeof config?.schedule === 'string' ? config.schedule.trim() : '';
-  const timezone = typeof config?.timezone === 'string' ? config.timezone.trim() : '';
-
-  if (triggerNode.type === 'trigger.cron') {
-    return {
-      mode: 'cron',
-      label: 'Cron schedule',
-      isScheduled: true,
-      schedule: schedule || undefined,
-      timezone: timezone || undefined,
-    };
-  }
-
-  const triggerTypeRaw = typeof config?.trigger_type === 'string'
-    ? config.trigger_type.trim().toLowerCase()
-    : 'manual';
-  const mode = (['manual', 'cron', 'webhook', 'state'].includes(triggerTypeRaw)
-    ? triggerTypeRaw
-    : 'unknown') as TriggerMode;
-
-  if (mode === 'cron') {
-    return {
-      mode,
-      label: 'Cron schedule',
-      isScheduled: true,
-      schedule: schedule || undefined,
-      timezone: timezone || undefined,
-    };
-  }
-
-  if (mode === 'webhook') {
-    return {
-      mode,
-      label: 'Webhook trigger',
-      isScheduled: false,
-    };
-  }
-
-  if (mode === 'state') {
-    return {
-      mode,
-      label: 'State trigger',
-      isScheduled: false,
-    };
-  }
-
-  if (mode === 'unknown') {
-    return {
-      mode,
-      label: 'Custom trigger',
-      isScheduled: false,
-    };
-  }
-
-  return {
-    mode: 'manual',
-    label: 'On demand',
-    isScheduled: false,
-  };
-}
-
-function formatNextRunTimestamp(nextRunAt?: string): string | null {
-  if (!nextRunAt) return null;
-  const date = new Date(nextRunAt);
-  if (Number.isNaN(date.getTime())) return nextRunAt;
-
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date);
-}
 
 function TriggerBadge({ details }: { details: TriggerDetails }) {
   const toneByMode: Record<TriggerMode, string> = {
@@ -185,15 +57,6 @@ function TriggerBadge({ details }: { details: TriggerDetails }) {
       {details.label}
     </span>
   );
-}
-
-function formatWorkflowUpdatedAt(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date);
 }
 
 function WorkflowCard({
@@ -605,15 +468,15 @@ export function DashboardPage() {
   }, [actorRef]);
 
   useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-    listen('workflow:execution-status', () => {
+    let unlisten = () => {};
+    onWorkflowExecutionStatus(() => {
       queryClient.invalidateQueries({ queryKey: ['dashboard-execution-health'] });
     }).then((fn) => {
       unlisten = fn;
     });
 
     return () => {
-      unlisten?.();
+      unlisten();
     };
   }, [queryClient]);
 
@@ -635,9 +498,7 @@ export function DashboardPage() {
     setPageError(null);
     setStatusUpdateWorkflowId(workflow.id);
     try {
-      const current = getWorkflowStatus(workflow);
-      const nextStatus: WorkflowStatus = current === 'published' ? 'draft' : 'published';
-      await updateWorkflow(workflow.id, { ...workflow, status: nextStatus });
+      await toggleWorkflowPublishStatus(workflow);
       actorRef.send({ type: 'REFRESH' });
     } catch (error) {
       setPageError(error instanceof Error ? error.message : 'Failed to update workflow status');
@@ -649,14 +510,9 @@ export function DashboardPage() {
   const handleRunWorkflow = async (e: React.MouseEvent, workflow: Workflow) => {
     e.stopPropagation();
     setPageError(null);
-    if (getWorkflowStatus(workflow) !== 'published') {
-      setPageError('Only published workflows can run from this page.');
-      return;
-    }
-
     setRunningWorkflowId(workflow.id);
     try {
-      const execution = await executeWorkflow(workflow.id, 'manual');
+      const execution = await runPublishedWorkflow(workflow);
       if (execution?.id) {
         navigate('monitoring', { id: execution.id });
       } else {
@@ -683,41 +539,13 @@ export function DashboardPage() {
   );
 
   const visibleWorkflows = useMemo(() => {
-    const normalizedSearch = searchQuery.trim().toLowerCase();
-    const filtered = normalizedSearch
-      ? workflows.filter((workflow) => {
-        const name = workflow.name.toLowerCase();
-        const description = workflow.description?.toLowerCase() ?? '';
-        return name.includes(normalizedSearch) || description.includes(normalizedSearch);
-      })
-      : workflows;
-
-    const stateFiltered = filtered.filter((workflow) => {
-      if (statusFilter === 'all') return true;
-      return getWorkflowStatus(workflow) === statusFilter;
+    return filterAndSortWorkflows(workflows, {
+      searchQuery,
+      sortBy,
+      statusFilter,
+      triggerFilter,
     });
-
-    const triggerFiltered = stateFiltered.filter((workflow) => {
-      if (triggerFilter === 'all') return true;
-      const details = getWorkflowTriggerDetails(workflow);
-      if (triggerFilter === 'scheduled') return details.isScheduled;
-      return !details.isScheduled;
-    });
-
-    return [...triggerFiltered].sort((a, b) => {
-      switch (sortBy) {
-        case 'name-asc':
-          return a.name.localeCompare(b.name);
-        case 'name-desc':
-          return b.name.localeCompare(a.name);
-        case 'nodes-desc':
-          return b.nodes.length - a.nodes.length;
-        case 'updated-desc':
-        default:
-          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-      }
-    });
-  }, [workflows, searchQuery, sortBy, statusFilter, triggerFilter]);
+  }, [searchQuery, sortBy, statusFilter, triggerFilter, workflows]);
 
   return (
     <CenteredPage width="lg">

@@ -1,7 +1,6 @@
 import type { KeyboardEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMachine } from '@xstate/react';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
   WorkflowExecution,
   ExecutionLog,
@@ -12,6 +11,12 @@ import { copyDebugBundle, type DebugBundleCredentialAuditFilter } from '@/lib/ap
 import { useRouter } from '@/lib/router';
 import { monitoringMachine } from './monitoring-machine';
 import { Badge, Input } from '@/components/ui/primitives';
+import {
+  onExecutionLogStream,
+  onWorkflowExecutionStatus,
+  onWorkflowNodeFinished,
+  onWorkflowNodeStarted,
+} from '@/lib/events/workflow-events';
 
 const STATUS_STYLES: Record<ExecutionStatus, string> = {
   IDLE: 'bg-gray-700 text-gray-300',
@@ -564,36 +569,36 @@ export function MonitoringPage() {
   }, [requestedExecutionId, send]);
 
   useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
+    let unlisten = () => {};
     if (selectedExecutionId) {
-      listen<ExecutionLog>(`execution-log-${selectedExecutionId}`, (event) => {
-        send({ type: 'STREAM_LOG_RECEIVED', log: event.payload });
+      onExecutionLogStream(selectedExecutionId, (payload) => {
+        send({ type: 'STREAM_LOG_RECEIVED', log: payload });
       }).then((fn) => {
         unlisten = fn;
       });
     }
     return () => {
-      unlisten?.();
+      unlisten();
     };
   }, [selectedExecutionId, send]);
 
   useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-    listen<Partial<WorkflowExecution> & { id: string }>('workflow:execution-status', (event) => {
-      send({ type: 'EXECUTION_STATUS_RECEIVED', execution: event.payload });
+    let unlisten = () => {};
+    onWorkflowExecutionStatus((payload) => {
+      send({ type: 'EXECUTION_STATUS_RECEIVED', execution: payload });
     }).then((fn) => {
       unlisten = fn;
     });
 
     return () => {
-      unlisten?.();
+      unlisten();
     };
   }, [send]);
 
   useEffect(() => {
     const selectedId = selectedExecutionId;
-    let unlistenStarted: UnlistenFn | undefined;
-    let unlistenFinished: UnlistenFn | undefined;
+    let unlistenStarted = () => {};
+    let unlistenFinished = () => {};
 
     const upsertFromEvent = (event: RuntimeNodeEvent) => {
       if (!selectedId || event.executionId !== selectedId) return;
@@ -611,21 +616,21 @@ export function MonitoringPage() {
       }));
     };
 
-    listen<RuntimeNodeEvent>('workflow:node-started', (event) => {
-      upsertFromEvent(event.payload);
+    onWorkflowNodeStarted((payload) => {
+      upsertFromEvent(payload);
     }).then((fn) => {
       unlistenStarted = fn;
     });
 
-    listen<RuntimeNodeEvent>('workflow:node-finished', (event) => {
-      upsertFromEvent(event.payload);
+    onWorkflowNodeFinished((payload) => {
+      upsertFromEvent(payload);
     }).then((fn) => {
       unlistenFinished = fn;
     });
 
     return () => {
-      unlistenStarted?.();
-      unlistenFinished?.();
+      unlistenStarted();
+      unlistenFinished();
     };
   }, [selectedExecutionId]);
 

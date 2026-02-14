@@ -2,14 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { listRepositories, type GitHubRepo } from '@/lib/api/github';
 import {
-  listBacklogItems,
-  syncGithubIssuesToBacklog,
-  deleteBacklogItem,
-  createLinkedWorkflowFromBacklog,
-  updateBacklogItemTriage,
-  bulkUpdateBacklogTriage,
-} from '@/lib/api/backlog';
-import type {
   BacklogItem,
   BacklogPriority,
   BacklogTriageStatus,
@@ -30,23 +22,22 @@ import {
 } from '@/app/components/PageLayout';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Button } from '@/components/ui/primitives';
-
-type SavedView = 'all' | 'recommended' | 'now' | 'next' | 'blocked' | 'unlinked';
-
-function matchesSavedView(item: BacklogItem, view: SavedView): boolean {
-  if (view === 'all') return true;
-  if (view === 'recommended') return true;
-  if (view === 'blocked') return item.triage_status === 'blocked';
-  if (view === 'unlinked') return !item.linked_workflow_id;
-  if (view === 'now') {
-    return (item.priority === 'critical' || item.priority === 'high')
-      && (item.triage_status === 'ready' || item.triage_status === 'in_progress');
-  }
-  if (view === 'next') {
-    return item.triage_status === 'ready' && item.priority === 'medium';
-  }
-  return true;
-}
+import {
+  bulkUpdateTriage,
+  createWorkflowFromBacklog,
+  invalidateBacklogQueries,
+  listBacklogItemsForView,
+  removeBacklogItem,
+  syncIssuesToBacklog,
+  updateBacklogTriage,
+} from '@/features/backlog/application/backlog-use-cases';
+import {
+  collectAvailableLabels,
+  computeSavedViewCounts,
+  SAVED_VIEW_OPTIONS,
+  selectItemsForView,
+  type SavedView,
+} from '@/features/backlog/domain/views';
 
 export function BacklogPage() {
   const { params, navigate } = useRouter();
@@ -85,7 +76,7 @@ export function BacklogPage() {
       searchQuery,
     ],
     queryFn: () =>
-      listBacklogItems({
+      listBacklogItemsForView({
         owner: selectedOwner || undefined,
         repo: selectedRepo || undefined,
         stateFilter: stateFilter || undefined,
@@ -98,16 +89,16 @@ export function BacklogPage() {
   });
 
   const syncMutation = useMutation({
-    mutationFn: () => syncGithubIssuesToBacklog(selectedOwner, selectedRepo),
+    mutationFn: () => syncIssuesToBacklog(selectedOwner, selectedRepo),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['backlog-items'] });
+      invalidateBacklogQueries(queryClient);
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteBacklogItem(id),
+    mutationFn: (id: string) => removeBacklogItem(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['backlog-items'] });
+      invalidateBacklogQueries(queryClient);
     },
   });
 
@@ -124,9 +115,9 @@ export function BacklogPage() {
         effort?: 'small' | 'medium' | 'large';
         impact?: 'low' | 'medium' | 'high';
       };
-    }) => updateBacklogItemTriage(backlogItemId, patch),
+    }) => updateBacklogTriage(backlogItemId, patch),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['backlog-items'] });
+      invalidateBacklogQueries(queryClient);
     },
   });
 
@@ -141,19 +132,19 @@ export function BacklogPage() {
         priority?: BacklogPriority;
         archive?: boolean;
       };
-    }) => bulkUpdateBacklogTriage(ids, patch),
+    }) => bulkUpdateTriage(ids, patch),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['backlog-items'] });
+      invalidateBacklogQueries(queryClient);
     },
   });
 
   const createWorkflowMutation = useMutation({
-    mutationFn: (backlogItemId: string) => createLinkedWorkflowFromBacklog(backlogItemId),
+    mutationFn: (backlogItemId: string) => createWorkflowFromBacklog(backlogItemId),
     onMutate: () => {
       setLinkedWorkflowFeedback(null);
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['backlog-items'] });
+      invalidateBacklogQueries(queryClient);
       setLinkedWorkflowFeedback(
         result.usedFallbackGuidelines
           ? 'Workflow linked with template guidelines (Claude unavailable).'
@@ -176,13 +167,7 @@ export function BacklogPage() {
   };
 
   const availableLabels = useMemo(() => {
-    const labelSet = new Set<string>();
-    for (const item of backlogItems) {
-      for (const label of item.labels) {
-        labelSet.add(label);
-      }
-    }
-    return Array.from(labelSet).sort();
+    return collectAvailableLabels(backlogItems);
   }, [backlogItems]);
 
   const recommendedItems = useMemo(
@@ -191,12 +176,7 @@ export function BacklogPage() {
   );
 
   const viewItems = useMemo(
-    () => {
-      if (savedView === 'recommended') {
-        return recommendedItems.map((entry) => entry.item);
-      }
-      return backlogItems.filter((item) => matchesSavedView(item, savedView));
-    },
+    () => selectItemsForView(backlogItems, recommendedItems, savedView),
     [backlogItems, recommendedItems, savedView],
   );
 
@@ -382,14 +362,7 @@ export function BacklogPage() {
   );
 
   const savedViewCounts = useMemo(
-    () => ({
-      all: backlogItems.length,
-      recommended: recommendedItems.length,
-      now: backlogItems.filter((item) => matchesSavedView(item, 'now')).length,
-      next: backlogItems.filter((item) => matchesSavedView(item, 'next')).length,
-      blocked: backlogItems.filter((item) => matchesSavedView(item, 'blocked')).length,
-      unlinked: backlogItems.filter((item) => matchesSavedView(item, 'unlinked')).length,
-    }),
+    () => computeSavedViewCounts(backlogItems, recommendedItems.length),
     [backlogItems, recommendedItems.length],
   );
 
@@ -415,14 +388,7 @@ export function BacklogPage() {
       {(selectedOwner && selectedRepo) && (
         <>
           <div className="mb-4 flex flex-wrap gap-2">
-            {([
-              ['all', 'All'],
-              ['recommended', 'Recommended'],
-              ['now', 'Now'],
-              ['next', 'Next'],
-              ['blocked', 'Blocked'],
-              ['unlinked', 'Unlinked'],
-            ] as Array<[SavedView, string]>).map(([view, label]) => (
+            {SAVED_VIEW_OPTIONS.map(([view, label]) => (
               <button
                 key={view}
                 type="button"
