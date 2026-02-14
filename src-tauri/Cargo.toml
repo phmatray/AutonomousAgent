@@ -26,7 +26,7 @@ uuid = { version = "1.11", features = ["v4", "serde"] }
 async-trait = "0.1"
 regex = "1.11"
 log = "0.4"
-cron = "0.12"
+cron = "0.15"
 aes-gcm = "0.10"
 base64 = "0.22"
 rand = "0.8"
