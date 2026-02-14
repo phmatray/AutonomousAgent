@@ -1,8 +1,7 @@
 import { useRouter } from '@/lib/router';
 import { Clock3, PlayCircle, Trash2 } from 'lucide-react';
 import type { Workflow } from '@/types/workflow';
-import { useEffect, useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import {
   CenteredPage,
@@ -11,12 +10,9 @@ import {
   PageLoadingState,
   PageNotice,
 } from '@/app/components/PageLayout';
-import { useWorkflowCatalogActorRef, WorkflowCatalogContext } from '@/app/state/workflow-catalog-machine';
 import { listExecutions } from '@/lib/api/workflow';
 import { Badge, Button, Input, SectionCard } from '@/components/ui/primitives';
-import { onWorkflowExecutionStatus } from '@/lib/events/workflow-events';
 import {
-  filterAndSortWorkflows,
   formatNextRunTimestamp,
   formatWorkflowUpdatedAt,
   getWorkflowStatus,
@@ -27,11 +23,7 @@ import {
   type TriggerMode,
   type VisibilityFilter,
 } from '@/features/dashboard/domain/workflows';
-import {
-  runPublishedWorkflow,
-  toggleWorkflowPublishStatus,
-} from '@/features/dashboard/application/workflow-actions';
-import { queryKeys } from '@/lib/query-keys';
+import { useDashboardModel } from '@/features/dashboard/application/use-dashboard-model';
 
 function StatusBadge({ status }: { status: string }) {
   const tone = status === 'published' ? 'success' : 'default';
@@ -438,115 +430,37 @@ function EmptyState({
 
 export function DashboardPage() {
   const { navigate } = useRouter();
-  const queryClient = useQueryClient();
-  const actorRef = useWorkflowCatalogActorRef();
-  const workflows = WorkflowCatalogContext.useSelector((state) => state.context.workflows) ?? [];
-  const loadError = WorkflowCatalogContext.useSelector((state) => state.context.loadError);
-  const actionError = WorkflowCatalogContext.useSelector((state) => state.context.actionError);
-  const pendingDeleteId = WorkflowCatalogContext.useSelector((state) => state.context.pendingDeleteId);
-  const isLoading = WorkflowCatalogContext.useSelector((state) => state.matches('loading'));
-  const isDeleting = WorkflowCatalogContext.useSelector((state) => state.matches('deleting'));
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('updated-desc');
-  const [statusFilter, setStatusFilter] = useState<VisibilityFilter>('all');
-  const [triggerFilter, setTriggerFilter] = useState<TriggerFilter>('all');
-  const [statusUpdateWorkflowId, setStatusUpdateWorkflowId] = useState<string | null>(null);
-  const [runningWorkflowId, setRunningWorkflowId] = useState<string | null>(null);
-  const [pageError, setPageError] = useState<string | null>(null);
   const {
-    data: executionHealthData = [],
-    isLoading: isExecutionHealthLoading,
-    isError: isExecutionHealthError,
-  } = useQuery({
-    queryKey: queryKeys.dashboardExecutionHealth,
-    queryFn: async () => (await listExecutions()) ?? [],
-    enabled: !isLoading && !loadError,
-    retry: false,
-  });
-
-  useEffect(() => {
-    actorRef.send({ type: 'REFRESH' });
-  }, [actorRef]);
-
-  useEffect(() => {
-    let unlisten = () => {};
-    onWorkflowExecutionStatus(() => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboardExecutionHealth });
-    }).then((fn) => {
-      unlisten = fn;
-    });
-
-    return () => {
-      unlisten();
-    };
-  }, [queryClient]);
-
-  const navigateToEditor = (workflowId?: string) => {
-    if (workflowId) {
-      navigate('editor', { id: workflowId });
-    } else {
-      navigate('editor');
-    }
-  };
-
-  const handleDeleteClick = (e: React.MouseEvent, workflow: Workflow) => {
-    e.stopPropagation(); // Prevent card click from firing
-    actorRef.send({ type: 'REQUEST_DELETE', id: workflow.id });
-  };
-
-  const handleTogglePublish = async (e: React.MouseEvent, workflow: Workflow) => {
-    e.stopPropagation();
-    setPageError(null);
-    setStatusUpdateWorkflowId(workflow.id);
-    try {
-      await toggleWorkflowPublishStatus(workflow);
-      actorRef.send({ type: 'REFRESH' });
-    } catch (error) {
-      setPageError(error instanceof Error ? error.message : 'Failed to update workflow status');
-    } finally {
-      setStatusUpdateWorkflowId(null);
-    }
-  };
-
-  const handleRunWorkflow = async (e: React.MouseEvent, workflow: Workflow) => {
-    e.stopPropagation();
-    setPageError(null);
-    setRunningWorkflowId(workflow.id);
-    try {
-      const execution = await runPublishedWorkflow(workflow);
-      if (execution?.id) {
-        navigate('monitoring', { id: execution.id });
-      } else {
-        navigate('monitoring');
-      }
-    } catch (error) {
-      setPageError(error instanceof Error ? error.message : 'Failed to run workflow');
-    } finally {
-      setRunningWorkflowId(null);
-    }
-  };
-
-  const confirmDelete = () => {
-    actorRef.send({ type: 'CONFIRM_DELETE' });
-  };
-
-  const cancelDelete = () => {
-    actorRef.send({ type: 'CANCEL_DELETE' });
-  };
-
-  const workflowToDelete = useMemo(
-    () => workflows.find((workflow) => workflow.id === pendingDeleteId) ?? null,
-    [workflows, pendingDeleteId],
-  );
-
-  const visibleWorkflows = useMemo(() => {
-    return filterAndSortWorkflows(workflows, {
-      searchQuery,
-      sortBy,
-      statusFilter,
-      triggerFilter,
-    });
-  }, [searchQuery, sortBy, statusFilter, triggerFilter, workflows]);
+    workflows,
+    loadError,
+    actionError,
+    isLoading,
+    isDeleting,
+    searchQuery,
+    sortBy,
+    statusFilter,
+    triggerFilter,
+    statusUpdateWorkflowId,
+    runningWorkflowId,
+    pageError,
+    executionHealthData,
+    isExecutionHealthLoading,
+    isExecutionHealthError,
+    workflowToDelete,
+    visibleWorkflows,
+    setSearchQuery,
+    setSortBy,
+    setStatusFilter,
+    setTriggerFilter,
+    navigateToEditor,
+    handleDeleteClick,
+    handleTogglePublish,
+    handleRunWorkflow,
+    confirmDelete,
+    cancelDelete,
+    retryWorkflowCatalogLoad,
+    clearFilters,
+  } = useDashboardModel({ navigate });
 
   return (
     <CenteredPage width="lg">
@@ -590,7 +504,7 @@ export function DashboardPage() {
             Backend services may not be running. The workflow editor is still available.
           </p>
           <Button
-            onClick={() => actorRef.send({ type: 'RETRY' })}
+            onClick={retryWorkflowCatalogLoad}
             disabled={isLoading}
             variant="secondary"
             className="mt-4 mr-2"
@@ -626,12 +540,7 @@ export function DashboardPage() {
             onSortChange={setSortBy}
             onStatusFilterChange={setStatusFilter}
             onTriggerFilterChange={setTriggerFilter}
-            onClearFilters={() => {
-              setSearchQuery('');
-              setStatusFilter('all');
-              setTriggerFilter('all');
-              setSortBy('updated-desc');
-            }}
+            onClearFilters={clearFilters}
           />
 
           {visibleWorkflows.length === 0 ? (
@@ -640,12 +549,7 @@ export function DashboardPage() {
               description="Try broadening search, publication state, or trigger mode."
               actions={(
                 <Button
-                  onClick={() => {
-                    setSearchQuery('');
-                    setStatusFilter('all');
-                    setTriggerFilter('all');
-                    setSortBy('updated-desc');
-                  }}
+                  onClick={clearFilters}
                   variant="secondary"
                   size="sm"
                 >
