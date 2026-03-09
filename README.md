@@ -103,6 +103,14 @@ autonomous-agent/
 - Rust 1.75+
 - Git
 - Claude Code CLI (`claude`) installed and on PATH
+- Linux only: Tauri system libraries (at minimum `glib-2.0` development headers)
+
+On Debian/Ubuntu, install the common Tauri v2 Linux prerequisites with:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+```
 
 ### Installation
 
