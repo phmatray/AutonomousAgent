@@ -2,6 +2,20 @@
 
 # Autonomous Agent
 
+<!-- portfolio-badges:start -->
+<!-- Identity -->
+[![phmatray - AutonomousAgent](https://img.shields.io/static/v1?label=phmatray&message=AutonomousAgent&color=blue&logo=github)](https://github.com/phmatray/AutonomousAgent)
+![Top language](https://img.shields.io/github/languages/top/phmatray/AutonomousAgent)
+[![Stars](https://img.shields.io/github/stars/phmatray/AutonomousAgent?style=social)](https://github.com/phmatray/AutonomousAgent/stargazers)
+[![Forks](https://img.shields.io/github/forks/phmatray/AutonomousAgent?style=social)](https://github.com/phmatray/AutonomousAgent/network/members)
+
+<!-- Activity -->
+[![Issues](https://img.shields.io/github/issues/phmatray/AutonomousAgent)](https://github.com/phmatray/AutonomousAgent/issues)
+[![Pull requests](https://img.shields.io/github/issues-pr/phmatray/AutonomousAgent)](https://github.com/phmatray/AutonomousAgent/pulls)
+[![Last commit](https://img.shields.io/github/last-commit/phmatray/AutonomousAgent)](https://github.com/phmatray/AutonomousAgent/commits)
+<!-- portfolio-badges:end -->
+
+
 An autonomous AI developer system that can automatically resolve GitHub issues by orchestrating Claude Code CLI and GitHub API through a visual workflow interface.
 
 ## Overview
