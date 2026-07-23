@@ -1,3 +1,5 @@
+![AutonomousAgent banner](.github/banner.png)
+
 # Autonomous Agent
 
 An autonomous AI developer system that can automatically resolve GitHub issues by orchestrating Claude Code CLI and GitHub API through a visual workflow interface.
