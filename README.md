@@ -50,6 +50,17 @@ This project provides a desktop application (built with Tauri + React) similar t
 
 A pre-built "Autonomous Developer" workflow template is included that implements this full pipeline out of the box.
 
+## Features
+
+- **Visual workflow editor** — A drag-and-drop, DAG-based canvas (built on `@xyflow/react`) for composing automation pipelines out of GitHub, Git, Claude, and control-flow nodes.
+- **Autonomous issue-to-PR pipeline** — The bundled "Autonomous Developer" template syncs a repo, reads issues, plans and applies a fix via Claude Code, commits with Conventional Commits + Gitmoji, and opens a pull request end to end.
+- **13 workflow node types with template resolution** — GitHub (sync/read issues/create PR), Git (worktree/branch/commit), Claude (analyze/plan/apply), and control-flow (trigger/condition/loop/delay) nodes, wired together with `{{nodeId.field}}` references resolved at runtime.
+- **Parallel DAG execution engine** — Workflow edges are topologically sorted (Kahn's algorithm) with cycle detection, grouping independent nodes into levels that execute in parallel, backed by an explicit state machine and configurable retry/backoff policies.
+- **Workflow preflight validation** — Checks node configs, credentials, and template references before a run starts, surfacing node-level errors, warnings, and hints so broken workflows fail fast instead of mid-execution.
+- **Backlog triage with issue scoring** — Syncs GitHub issues into a persistent backlog and ranks them by priority, triage status, impact, effort, and labels, generating a short human-readable rationale for what to automate next.
+- **Live execution monitoring & debug bundles** — Streams Claude CLI stdout/stderr and node state in real time during a run, with an exportable JSON debug bundle (with optional credential-activity filters) for troubleshooting failures.
+- **Secure credential storage with audit trail** — GitHub tokens and Claude credentials live in the OS keyring (Keychain/Credential Manager/Secret Service), auto-restore on startup, and every save/verify/delete action is recorded in a local, secret-redacted audit log.
+
 ## Technology Stack
 
 ### Frontend
