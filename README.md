@@ -15,6 +15,24 @@
 [![Last commit](https://img.shields.io/github/last-commit/phmatray/AutonomousAgent)](https://github.com/phmatray/AutonomousAgent/commits)
 <!-- portfolio-badges:end -->
 
+<!-- portfolio-toc:start -->
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Technology Stack](#technology-stack)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Configuration](#configuration)
+- [Architecture](#architecture)
+- [Git Workflow](#git-workflow)
+- [Development Roadmap](#development-roadmap)
+- [License](#license)
+- [Contributing](#contributing)
+
+<!-- portfolio-toc:end -->
+
+
 
 An autonomous AI developer system that can automatically resolve GitHub issues by orchestrating Claude Code CLI and GitHub API through a visual workflow interface.
 
