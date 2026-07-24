@@ -8,6 +8,7 @@
 ![Top language](https://img.shields.io/github/languages/top/phmatray/AutonomousAgent)
 [![Stars](https://img.shields.io/github/stars/phmatray/AutonomousAgent?style=social)](https://github.com/phmatray/AutonomousAgent/stargazers)
 [![Forks](https://img.shields.io/github/forks/phmatray/AutonomousAgent?style=social)](https://github.com/phmatray/AutonomousAgent/network/members)
+[![License](https://img.shields.io/github/license/phmatray/AutonomousAgent)](https://github.com/phmatray/AutonomousAgent/blob/HEAD/LICENSE)
 
 <!-- Activity -->
 [![Issues](https://img.shields.io/github/issues/phmatray/AutonomousAgent)](https://github.com/phmatray/AutonomousAgent/issues)
