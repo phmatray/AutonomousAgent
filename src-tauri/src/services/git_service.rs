@@ -42,7 +42,14 @@ impl GitService {
         let head = repo.head().ok();
         let branch = head
             .as_ref()
-            .and_then(|h| h.shorthand().map(String::from))
+            // git2 0.21 : `Reference::shorthand()` rend un `Result<&str, Error>` la ou la
+            // 0.20 rendait un `Option<&str>` (elle faisait le `.ok()` en interne).
+            // `.ok()` conserve donc la semantique d'origine : un shorthand indisponible
+            // retombe sur "HEAD" juste en dessous, il ne remonte pas d'erreur.
+            // NE PAS suivre la suggestion de rustc (`Some(...)`) : elle type-checke mais
+            // produit un Option<Result<..>>, et un shorthand en echec deviendrait un
+            // Some(Err) au lieu du repli.
+            .and_then(|h| h.shorthand().ok().map(String::from))
             .unwrap_or_else(|| "HEAD".to_string());
 
         let statuses = repo.statuses(None)?;
