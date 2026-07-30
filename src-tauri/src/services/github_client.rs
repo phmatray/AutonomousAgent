@@ -368,31 +368,91 @@ impl GitHubClient {
 mod tests {
     use super::GitHubClient;
     use octocrab::models::issues::Issue;
+    use serde_json::{json, Value};
+
+    // `octocrab::models::issues::Issue` est #[non_exhaustive] : il ne peut etre construit
+    // que par deserialisation, et depuis octocrab 0.49 tous ses champs non optionnels sont
+    // obligatoires (`id`, `node_id`, les 6 URLs, `user`, `locked`, `comments`, les dates).
+    // Ces fabriques portent ce remplissage obligatoire pour que le test reste centre sur
+    // les seuls champs que `normalize_issues` consomme.
+    fn author_json(login: &str) -> Value {
+        json!({
+            "login": login,
+            "id": 1,
+            "node_id": "MDQ6VXNlcjE=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/1",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/o",
+            "html_url": "https://github.com/o",
+            "followers_url": "https://api.github.com/users/o/followers",
+            "following_url": "https://api.github.com/users/o/following",
+            "gists_url": "https://api.github.com/users/o/gists",
+            "starred_url": "https://api.github.com/users/o/starred",
+            "subscriptions_url": "https://api.github.com/users/o/subscriptions",
+            "organizations_url": "https://api.github.com/users/o/orgs",
+            "repos_url": "https://api.github.com/users/o/repos",
+            "events_url": "https://api.github.com/users/o/events",
+            "received_events_url": "https://api.github.com/users/o/received_events",
+            "type": "User",
+            "site_admin": false,
+            "name": null,
+            "patch_url": null
+        })
+    }
+
+    fn label_json(name: &str) -> Value {
+        json!({
+            "id": 1,
+            "node_id": "MDU6TGFiZWwx",
+            "url": "https://api.github.com/repos/o/r/labels/name",
+            "name": name,
+            "color": "a2eeef",
+            "default": false
+        })
+    }
+
+    fn issue_json(number: u64, title: &str) -> Value {
+        json!({
+            "id": number,
+            "node_id": "MDU6SXNzdWUx",
+            "url": format!("https://api.github.com/repos/o/r/issues/{number}"),
+            "repository_url": "https://api.github.com/repos/o/r",
+            "labels_url": format!("https://api.github.com/repos/o/r/issues/{number}/labels"),
+            "comments_url": format!("https://api.github.com/repos/o/r/issues/{number}/comments"),
+            "events_url": format!("https://api.github.com/repos/o/r/issues/{number}/events"),
+            "html_url": format!("https://github.com/o/r/issues/{number}"),
+            "number": number,
+            "state": "open",
+            "title": title,
+            "body": null,
+            "user": author_json("octocat"),
+            "labels": [],
+            "assignees": [],
+            "locked": false,
+            "comments": 0,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z"
+        })
+    }
 
     #[test]
     fn normalize_issues_filters_pull_requests_and_maps_fields() {
-        let issue_json = serde_json::json!({
-            "number": 7,
-            "title": "Enhance issue sync",
-            "body": "Load all pages",
-            "state": "open",
-            "labels": [{ "name": "enhancement" }],
-            "assignees": [{ "login": "alice" }],
-            "pull_request": null
-        });
-        let pull_request_json = serde_json::json!({
-            "number": 8,
-            "title": "PR should be filtered",
-            "body": null,
-            "state": "open",
-            "labels": [],
-            "assignees": [],
-            "pull_request": { "url": "https://api.github.com/repos/o/r/pulls/8" }
+        let mut issue_payload = issue_json(7, "Enhance issue sync");
+        issue_payload["body"] = json!("Load all pages");
+        issue_payload["labels"] = json!([label_json("enhancement")]);
+        issue_payload["assignees"] = json!([author_json("alice")]);
+
+        let mut pull_request_payload = issue_json(8, "PR should be filtered");
+        pull_request_payload["pull_request"] = json!({
+            "url": "https://api.github.com/repos/o/r/pulls/8",
+            "html_url": "https://github.com/o/r/pull/8",
+            "diff_url": "https://github.com/o/r/pull/8.diff",
+            "patch_url": "https://github.com/o/r/pull/8.patch"
         });
 
         let issues: Vec<Issue> = vec![
-            serde_json::from_value(issue_json).expect("valid issue payload"),
-            serde_json::from_value(pull_request_json).expect("valid pull request payload"),
+            serde_json::from_value(issue_payload).expect("valid issue payload"),
+            serde_json::from_value(pull_request_payload).expect("valid pull request payload"),
         ];
 
         let normalized = GitHubClient::normalize_issues(issues);
