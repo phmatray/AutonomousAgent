@@ -2,7 +2,10 @@ use crate::errors::{AppError, Result};
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use rand::RngCore;
+// rand 0.10 : `RngCore` a quitte la racine et `rngs::OsRng` est devenu `rngs::SysRng`,
+// qui n'implemente que le trait faillible `TryRng` (pas de `fill_bytes` infaillible).
+use rand::rngs::SysRng;
+use rand::TryRng;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
@@ -153,7 +156,9 @@ impl StorageService {
         })?;
 
         let mut nonce_bytes = [0u8; 12];
-        rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
+        SysRng.try_fill_bytes(&mut nonce_bytes).map_err(|e| {
+            AppError::Authentication(format!("Failed to generate encryption nonce: {}", e))
+        })?;
 
         let ciphertext = cipher
             .encrypt(Nonce::from_slice(&nonce_bytes), plaintext.as_bytes())
@@ -212,7 +217,9 @@ impl StorageService {
             }
             Err(keyring::Error::NoEntry) => {
                 let mut key = [0u8; 32];
-                rand::rngs::OsRng.fill_bytes(&mut key);
+                SysRng.try_fill_bytes(&mut key).map_err(|e| {
+                    AppError::Authentication(format!("Failed to generate encryption key: {}", e))
+                })?;
                 let encoded = BASE64.encode(key);
 
                 entry.set_password(&encoded).map_err(|e| {
